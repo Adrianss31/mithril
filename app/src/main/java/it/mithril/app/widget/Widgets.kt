@@ -51,7 +51,7 @@ import it.mithril.app.domain.Trend
 import it.mithril.app.ui.theme.DarkColors
 import it.mithril.app.ui.theme.LightColors
 
-private object WC {
+internal object WC {
     val surface = ColorProvider(LightColors.surface, DarkColors.surface)
     val surface2 = ColorProvider(LightColors.surface2, DarkColors.surface2)
     val ink = ColorProvider(LightColors.ink, DarkColors.ink)
@@ -59,12 +59,19 @@ private object WC {
     val ink3 = ColorProvider(LightColors.ink3, DarkColors.ink3)
     val accent = ColorProvider(LightColors.accent, DarkColors.accent)
     val onAccent = ColorProvider(LightColors.onAccent, DarkColors.onAccent)
+    val accentSoft = ColorProvider(LightColors.accentSoft, DarkColors.accentSoft)
+    val accentInk = ColorProvider(LightColors.accentInk, DarkColors.accentInk)
+    val line2 = ColorProvider(LightColors.line2, DarkColors.line2)
 }
 
 object Widgets {
     suspend fun updateAll(context: Context) {
         runCatching { WeightWidget().updateAll(context) }
         runCatching { SessionWidget().updateAll(context) }
+        runCatching { StepsRingWidget().updateAll(context) }
+        runCatching { FirstVideoWidget().updateAll(context) }
+        runCatching { WeightSmallWidget().updateAll(context) }
+        runCatching { GoalWidget().updateAll(context) }
     }
 }
 

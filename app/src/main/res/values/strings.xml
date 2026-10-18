@@ -6,6 +6,14 @@
     <string name="widget_weight_desc">Trend del peso e pesata rapida</string>
     <string name="widget_session">Mithril · Sessione</string>
     <string name="widget_session_desc">Prossima sessione, avvio in un tocco</string>
+    <string name="widget_steps">Mithril · Passi</string>
+    <string name="widget_steps_desc">Anello dei passi di oggi</string>
+    <string name="widget_first_video">Mithril · Primo video</string>
+    <string name="widget_first_video_desc">Avvia la sessione di oggi in un tocco</string>
+    <string name="widget_weight_small">Mithril · Peso piccolo</string>
+    <string name="widget_weight_small_desc">Trend del peso, tocca per pesarti</string>
+    <string name="widget_goal">Mithril · Traguardo</string>
+    <string name="widget_goal_desc">Quanto manca all'obiettivo di peso</string>
     <string name="channel_reminders">Promemoria sessioni</string>
     <string name="channel_review">Revisione settimanale</string>
 </resources>

@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -68,6 +69,14 @@
             android:taskAffinity="it.mithril.app.quick"
             android:theme="@style/Theme.Mithril.Overlay" />
 
+        <!-- Widget passi senza permesso: richiesta Health Connect e chiusura -->
+        <activity
+            android:name=".health.HealthPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="it.mithril.app.quick"
+            android:theme="@style/Theme.Mithril.Overlay" />
+
         <!-- Health Connect: spiegazione dei permessi -->
         <activity
             android:name=".health.HealthRationaleActivity"
@@ -115,6 +124,43 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_session_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.StepsRingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_steps">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_steps_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.FirstVideoWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_first_video">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_first_video_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.WeightSmallWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_weight_small">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_weight_small_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.GoalWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_goal">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_goal_info" />
         </receiver>
 
         <provider

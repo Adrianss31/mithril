@@ -380,7 +380,7 @@ private fun StepsMini(steps: StepsState, goal: Int, modifier: Modifier) {
                 Text("Collega Health Connect per vedere i passi.", style = T.secondary, color = M.c.ink2)
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.height(10.dp))
-                TonalButton("Collega", { launcher.launch(Health.PERMISSIONS) }, height = 40.dp)
+                TonalButton("Collega", { launcher.launch(Health.requestSet) }, height = 40.dp)
             }
             else -> {
                 Text("Health Connect non è disponibile su questo telefono.", style = T.secondary, color = M.c.ink2)

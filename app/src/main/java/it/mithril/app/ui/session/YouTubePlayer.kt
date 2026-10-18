@@ -36,7 +36,7 @@ class YouTubePlayerState : MediaEngine {
     override fun play() = js("cmd('play')")
     override fun pause() = js("cmd('pause')")
     override fun seek(sec: Float) = js("cmd('seek',$sec)")
-    fun load(id: String) { position = 0f; duration = 0f; error = null; state = -1; js("cmd('load','$id')") }
+    fun load(id: String, startSec: Float = 0f) { position = startSec; duration = 0f; error = null; state = -1; js("cmd('load','$id',${startSec.toInt()})") }
     private fun js(code: String) { web?.evaluateJavascript(code, null) }
 
     companion object {
@@ -47,7 +47,7 @@ class YouTubePlayerState : MediaEngine {
 }
 
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
-fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayerState): WebView {
+fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayerState, startSec: Float = 0f): WebView {
     val main = Handler(Looper.getMainLooper())
     return WebView(context).apply {
         setBackgroundColor(Color.BLACK)
@@ -68,11 +68,11 @@ fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayer
             @JavascriptInterface fun onTime(t: Double, d: Double) = main.post { state.position = t.toFloat(); if (d > 0) state.duration = d.toFloat() }
         }, "Mithril")
         state.web = this
-        loadDataWithBaseURL(YouTubePlayerState.ORIGIN + "/", html(firstId), "text/html", "utf-8", null)
+        loadDataWithBaseURL(YouTubePlayerState.ORIGIN + "/", html(firstId, startSec.toInt()), "text/html", "utf-8", null)
     }
 }
 
-private fun html(id: String) = """
+private fun html(id: String, start: Int) = """
 <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}#p{position:absolute;top:0;left:0;width:100%;height:100%}</style>
 </head><body><div id="p"></div>
@@ -81,7 +81,7 @@ var player=null, ready=false;
 var tag=document.createElement('script'); tag.src='https://www.youtube.com/iframe_api'; document.head.appendChild(tag);
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',
-    playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1,controls:1,fs:0,iv_load_policy:3,origin:'${YouTubePlayerState.ORIGIN}',widget_referrer:'${YouTubePlayerState.ORIGIN}'},
+    playerVars:{start:$start,autoplay:1,playsinline:1,rel:0,modestbranding:1,controls:1,fs:0,iv_load_policy:3,origin:'${YouTubePlayerState.ORIGIN}',widget_referrer:'${YouTubePlayerState.ORIGIN}'},
     events:{
       onReady:function(e){ready=true;Mithril.onReady(player.getDuration()||0);e.target.playVideo();},
       onStateChange:function(e){Mithril.onState(e.data);},
@@ -89,8 +89,8 @@ function onYouTubeIframeAPIReady(){
     }});
   setInterval(function(){ if(ready&&player&&player.getCurrentTime){ Mithril.onTime(player.getCurrentTime()||0, player.getDuration()||0); } }, 500);
 }
-function cmd(c,a){ if(!ready||!player) return;
+function cmd(c,a,b){ if(!ready||!player) return;
   if(c=='play') player.playVideo(); else if(c=='pause') player.pauseVideo();
-  else if(c=='seek') player.seekTo(a,true); else if(c=='load') player.loadVideoById(a); }
+  else if(c=='seek') player.seekTo(a,true); else if(c=='load') player.loadVideoById({videoId:a,startSeconds:b||0}); }
 </script></body></html>
 """.trimIndent()

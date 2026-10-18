@@ -60,13 +60,16 @@ class QuickWeightActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 var tenths by remember { mutableIntStateOf(0) }
                 var loaded by remember { mutableStateOf(false) }
+                var editing by remember { mutableStateOf(false) }
                 var closing by remember { mutableStateOf(false) }
                 val motion = M.motion
                 val scrim = remember { Animatable(if (motion) 0f else 1f) }
                 val card = remember { Animatable(if (motion) 0f else 1f) }
                 LaunchedEffect(Unit) {
                     val w = repo.dao.weightsNow()
-                    val today = w.firstOrNull { it.date == LocalDate.now().toEpochDay() } ?: w.lastOrNull()
+                    val todays = w.firstOrNull { it.date == LocalDate.now().toEpochDay() }
+                    editing = todays != null
+                    val today = todays ?: w.lastOrNull()
                     tenths = Math.round((today?.kg ?: 75.0) * 10).toInt()
                     loaded = true
                     if (motion) {
@@ -105,7 +108,7 @@ class QuickWeightActivity : ComponentActivity() {
                             .clickable(remember { MutableInteractionSource() }, null) {}
                             .padding(20.dp),
                     ) {
-                        Text("Pesata di oggi", style = T.sheetTitle, color = M.c.ink)
+                        Text(if (editing) "Modifica pesata di oggi" else "Pesata di oggi", style = T.sheetTitle, color = M.c.ink)
                         Spacer(Modifier.height(18.dp))
                         if (loaded) WeightWheel(tenths, { tenths = it.coerceIn(200, 3000) }, stepper = 48.dp, big = false)
                         Spacer(Modifier.height(20.dp))

@@ -76,6 +76,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import it.mithril.app.cast.Cast
 import it.mithril.app.cast.CastEngine
 import it.mithril.app.data.LocalVideos
+import it.mithril.app.data.Progress
+import it.mithril.app.data.SessionProgress
+import it.mithril.app.widget.Widgets
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Symbol
 import kotlinx.coroutines.delay
@@ -93,9 +96,12 @@ fun PlayerScreen(req: SessionRequest) {
     if (all == null) { Box(Modifier.fillMaxSize().background(M.c.player)); return }
     if (videos.isEmpty()) { LaunchedEffect(Unit) { toast.show("Video non trovati"); nav.pop() }; return }
 
-    var index by remember { mutableIntStateOf(0) }
+    // Sessione di oggi iniziata e lasciata a metà: si riprende da lì.
+    val resume = remember { req.slotId?.takeIf { !req.mini }?.let { SessionProgress.get(context, it) }?.takeIf { it.index in videos.indices } }
+    var index by remember { mutableIntStateOf(resume?.index ?: 0) }
+    var startAt by remember { mutableFloatStateOf(resume?.position ?: 0f) }
     val learned = remember { mutableStateListOf<Int>().apply { addAll(videos.map { it.durationSec ?: 0 }) } }
-    var watched by remember { mutableFloatStateOf(0f) }
+    var watched by remember { mutableFloatStateOf(resume?.watched ?: 0f) }
     var lastPos by remember { mutableFloatStateOf(0f) }
     var finishing by remember { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
@@ -114,6 +120,7 @@ fun PlayerScreen(req: SessionRequest) {
         if (finishing) return
         finishing = true
         engine.pause()
+        SessionProgress.clear(context)
         scope.launch {
             val done = (0..index).count { k -> k < index || engine.state == 0 || engine.position > (learned[k] * 0.8f) }
             val ids = videos.map { it.id }
@@ -140,18 +147,29 @@ fun PlayerScreen(req: SessionRequest) {
                 } else if (local.loadedUri == uri) {
                     if (wasCasting) local.seek(Cast.engine.position)
                     local.play()
-                } else local.load(uri)
+                } else local.load(uri, startAt)
             }
             v.embeddable == false -> leave(Dest.External(req, v.id))
             else -> {
                 local.pause()
                 if (wasCasting) Cast.disconnect()
-                if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt) else yt.load(v.youtubeId)
+                if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt, startAt) else yt.load(v.youtubeId, startAt)
             }
         }
         wasCasting = casting
+        startAt = 0f
         lastPos = engine.position
     }
+    // Avanzamento salvato per riprendere (e per il widget "Primo video").
+    fun saveProgress() {
+        val slot = req.slotId ?: return
+        if (req.mini || finishing) return
+        SessionProgress.save(context, Progress(slot, java.time.LocalDate.now().toEpochDay(), index, engine.position, watched, total))
+    }
+    val latestSave = rememberUpdatedState { saveProgress() }
+    val latestPlaying = rememberUpdatedState(engine.playing)
+    LaunchedEffect(index) { if (index > 0 || watched > 0f) { saveProgress(); Widgets.updateAll(context) } }
+    LaunchedEffect(Unit) { while (true) { delay(10_000); if (latestPlaying.value) latestSave.value() } }
     // Le posizioni di ExoPlayer e della TV vanno lette di continuo.
     LaunchedEffect(engine) {
         while (true) {
@@ -197,6 +215,7 @@ fun PlayerScreen(req: SessionRequest) {
         }
         lifecycle.addObserver(obs)
         onDispose {
+            if (!finishing && watched > 5f) { latestSave.value(); repo.scope.launch { Widgets.updateAll(context) } }
             view.keepScreenOn = false
             lifecycle.removeObserver(obs)
             yt.web?.apply { stopLoading(); loadUrl("about:blank"); destroy() }

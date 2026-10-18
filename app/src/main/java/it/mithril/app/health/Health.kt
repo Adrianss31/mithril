@@ -17,6 +17,12 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
+import androidx.health.connect.client.feature.ExperimentalFeatureAvailabilityApi
+import it.mithril.app.data.StepsCache
+import it.mithril.app.widget.Widgets
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
@@ -53,6 +59,9 @@ data class StepsState(
 /** Lettura dei passi da Health Connect (solo lettura, nessun dato esce dal telefono). */
 object Health {
     val PERMISSIONS = setOf(HealthPermission.getReadPermission(StepsRecord::class))
+    /** Permessi da chiedere: i passi e, se il telefono lo supporta, la lettura in background per il widget. */
+    var requestSet: Set<String> = PERMISSIONS
+        private set
     private val _state = MutableStateFlow(StepsState())
     val state: StateFlow<StepsState> = _state.asStateFlow()
 
@@ -60,14 +69,20 @@ object Health {
 
     fun permissionContract() = PermissionController.createRequestPermissionResultContract()
 
+    @OptIn(ExperimentalFeatureAvailabilityApi::class)
     suspend fun refresh(context: Context) {
         if (!available(context)) { _state.value = StepsState(available = false); return }
         val client = HealthConnectClient.getOrCreate(context)
+        runCatching {
+            if (client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE) {
+                requestSet = PERMISSIONS + HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
+            }
+        }
         val granted = runCatching { client.permissionController.getGrantedPermissions().containsAll(PERMISSIONS) }.getOrDefault(false)
         if (!granted) { _state.value = StepsState(available = true, granted = false); return }
         val today = LocalDate.now()
         val start = today.minusDays(27)
-        val byDay = runCatching {
+        val read = runCatching {
             client.aggregateGroupByPeriod(
                 AggregateGroupByPeriodRequest(
                     metrics = setOf(StepsRecord.COUNT_TOTAL),
@@ -75,11 +90,14 @@ object Health {
                     timeRangeSlicer = Period.ofDays(1),
                 )
             ).associate { it.startTime.toLocalDate().toEpochDay() to (it.result[StepsRecord.COUNT_TOTAL] ?: 0L).toInt() }
-        }.getOrDefault(emptyMap())
+        }
+        val byDay = read.getOrDefault(emptyMap())
         val todaySteps = byDay[today.toEpochDay()] ?: runCatching {
             client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(today.atStartOfDay(), today.atTime(LocalTime.MAX))))[StepsRecord.COUNT_TOTAL]?.toInt()
         }.getOrNull()
-        _state.value = StepsState(available = true, granted = true, today = todaySteps ?: 0, byDay = byDay)
+        // In background Health Connect può rifiutare la lettura: si tiene l'ultimo valore letto oggi.
+        val today0 = if (read.isSuccess) (todaySteps ?: 0).also { StepsCache.save(context, it) } else StepsCache.today(context)
+        _state.value = StepsState(available = true, granted = true, today = today0, byDay = byDay.ifEmpty { _state.value.byDay })
     }
 }
 
@@ -101,6 +119,26 @@ class HealthRationaleActivity : ComponentActivity() {
                     PrimaryButton("Ho capito", onClick = { finish() })
                 }
             }
+        }
+    }
+}
+
+/** Aperta dal widget dei passi senza permesso: chiede l'accesso a Health Connect e si chiude. */
+class HealthPermissionActivity : ComponentActivity() {
+    private val launcher = registerForActivityResult(Health.permissionContract()) {
+        lifecycleScope.launch {
+            Health.refresh(applicationContext)
+            Widgets.updateAll(applicationContext)
+            finish()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            if (!Health.available(applicationContext)) { finish(); return@launch }
+            Health.refresh(applicationContext)
+            launcher.launch(Health.requestSet)
         }
     }
 }

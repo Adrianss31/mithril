@@ -28,6 +28,7 @@ import it.mithril.app.R
 import it.mithril.app.data.Repo
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
+import it.mithril.app.widget.Widgets
 
 /** Promemoria: un solo allarme esatto per la prossima sessione e uno per la revisione della domenica. */
 object Reminders {
@@ -35,9 +36,11 @@ object Reminders {
     const val CHANNEL_REVIEW = "review"
     private const val ACTION_SESSION = "it.mithril.app.REMIND_SESSION"
     private const val ACTION_REVIEW = "it.mithril.app.REMIND_REVIEW"
+    private const val ACTION_MIDNIGHT = "it.mithril.app.MIDNIGHT"
     private const val EXTRA_SLOT = "slot"
     private const val REQ_SESSION = 1
     private const val REQ_REVIEW = 2
+    private const val REQ_MIDNIGHT = 3
     const val NOTIF_SESSION = 100
     const val NOTIF_REVIEW = 200
 
@@ -68,6 +71,9 @@ object Reminders {
         val sessionPi = pending(context, ACTION_SESSION, REQ_SESSION, next?.first?.id)
         if (next == null) am.cancel(sessionPi) else setExact(am, next.second, sessionPi)
 
+        // A mezzanotte i widget passano al giorno nuovo (sessione di oggi, passi, pesata).
+        setExact(am, today.plusDays(1).atStartOfDay().plusMinutes(1), pending(context, ACTION_MIDNIGHT, REQ_MIDNIGHT, null))
+
         val reviewPi = pending(context, ACTION_REVIEW, REQ_REVIEW, null)
         if (!settings.reviewReminder) am.cancel(reviewPi)
         else {
@@ -95,6 +101,7 @@ object Reminders {
     internal suspend fun fire(context: Context, intent: Intent) {
         val repo = Repo.get(context)
         when (intent.action) {
+            ACTION_MIDNIGHT -> Widgets.updateAll(context)
             ACTION_SESSION -> {
                 val slot = repo.dao.slot(intent.getLongExtra(EXTRA_SLOT, -1)) ?: return
                 if (repo.dao.logsFrom(slot.date).any { it.slotId == slot.id || it.date == slot.date }) return

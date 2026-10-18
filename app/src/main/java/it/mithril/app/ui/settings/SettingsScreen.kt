@@ -130,7 +130,7 @@ fun SettingsScreen() {
                     steps.available -> {
                         Text("Collega Health Connect per vedere i passi in Oggi e nella revisione.", style = T.body14, color = M.c.ink2)
                         Spacer(Modifier.height(10.dp))
-                        TonalButton("Collega Health Connect", { healthLauncher.launch(Health.PERMISSIONS) }, height = 44.dp)
+                        TonalButton("Collega Health Connect", { healthLauncher.launch(Health.requestSet) }, height = 44.dp)
                     }
                     else -> Text("Health Connect non è disponibile su questo telefono.", style = T.body14, color = M.c.ink2)
                 }

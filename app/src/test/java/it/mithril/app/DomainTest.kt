@@ -9,6 +9,7 @@ import it.mithril.app.domain.DayState
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
 import it.mithril.app.domain.TimeSuggest
+import it.mithril.app.widget.formatSteps
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
 import org.junit.Assert.assertEquals
@@ -113,5 +114,11 @@ class DomainTest {
         // Tante pianificazioni sempre agli stessi orari: i predefiniti mai scelti spariscono.
         val many = (1..40).map { SlotEntity(it.toLong(), friday.toEpochDay() - it, if (it % 2 == 0) custom else 7 * 60, "Soggiorno", "1") }
         assertEquals(listOf(7 * 60, custom), TimeSuggest.suggest(many, friday))
+    }
+
+    @Test fun stepsAreShortInWidgets() {
+        assertEquals("7,2k", formatSteps(7210))
+        assertEquals("850", formatSteps(850))
+        assertEquals("—", formatSteps(null))
     }
 }
