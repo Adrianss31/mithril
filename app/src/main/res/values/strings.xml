@@ -13,7 +13,7 @@
     <string name="widget_weight_small">Mithril · Peso piccolo</string>
     <string name="widget_weight_small_desc">Trend del peso, tocca per pesarti</string>
     <string name="widget_goal">Mithril · Traguardo</string>
-    <string name="widget_goal_desc">Quanto manca all'obiettivo di peso</string>
+    <string name="widget_goal_desc">Quanto manca all\'obiettivo di peso</string>
     <string name="channel_reminders">Promemoria sessioni</string>
     <string name="channel_review">Revisione settimanale</string>
 </resources>
