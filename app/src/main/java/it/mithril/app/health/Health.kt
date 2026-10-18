@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
-import androidx.health.connect.client.feature.ExperimentalFeatureAvailabilityApi
 import it.mithril.app.data.StepsCache
 import it.mithril.app.widget.Widgets
 import androidx.lifecycle.lifecycleScope
@@ -69,7 +68,6 @@ object Health {
 
     fun permissionContract() = PermissionController.createRequestPermissionResultContract()
 
-    @OptIn(ExperimentalFeatureAvailabilityApi::class)
     suspend fun refresh(context: Context) {
         if (!available(context)) { _state.value = StepsState(available = false); return }
         val client = HealthConnectClient.getOrCreate(context)
