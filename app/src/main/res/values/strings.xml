@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mithril</string>
+    <string name="share_label">Mithril</string>
+    <string name="widget_weight">Mithril · Peso</string>
+    <string name="widget_weight_desc">Trend del peso e pesata rapida</string>
+    <string name="widget_session">Mithril · Sessione</string>
+    <string name="widget_session_desc">Prossima sessione, avvio in un tocco</string>
+    <string name="channel_reminders">Promemoria sessioni</string>
+    <string name="channel_review">Revisione settimanale</string>
+</resources>

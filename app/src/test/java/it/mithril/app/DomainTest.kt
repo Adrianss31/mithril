@@ -1,0 +1,105 @@
+package it.mithril.app
+
+import it.mithril.app.data.SessionLogEntity
+import it.mithril.app.data.SlotEntity
+import it.mithril.app.data.Tags
+import it.mithril.app.data.VideoEntity
+import it.mithril.app.data.YouTube
+import it.mithril.app.domain.DayState
+import it.mithril.app.domain.Fmt
+import it.mithril.app.domain.Goal
+import it.mithril.app.domain.Trend
+import it.mithril.app.domain.Week
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.time.LocalDate
+
+class DomainTest {
+    private val friday = LocalDate.of(2026, 10, 16)
+
+    private fun slot(date: LocalDate, id: Long = date.toEpochDay()) = SlotEntity(id, date.toEpochDay(), 18 * 60 + 30, "Soggiorno", "1,2")
+    private fun log(date: LocalDate, mini: Boolean = false) = SessionLogEntity(
+        0, null, date.toEpochDay(), if (mini) "MINI" else "FULL", 1f, 6, null, 0, "x", "1", 600,
+    )
+
+    @Test fun formatsAreItalian() {
+        assertEquals("84,9", Fmt.kg(84.94))
+        assertEquals("−0,3", Fmt.signedKg(-0.28))
+        assertEquals("+1,2", Fmt.signedKg(1.2))
+        assertEquals("5.840", Fmt.thousands(5840))
+        assertEquals("ven 16 ott", Fmt.dayShort(friday))
+        assertEquals("Venerdì 16", Fmt.dayTitle(friday))
+        assertEquals("12 – 18 ottobre", Fmt.weekRange(LocalDate.of(2026, 10, 12)))
+        assertEquals("28 settembre – 4 ottobre", Fmt.weekRange(LocalDate.of(2026, 9, 28)))
+        assertEquals("metà gennaio", Fmt.eta(LocalDate.of(2027, 1, 15)))
+        assertEquals("25:12", Fmt.clock(25 * 60 + 12))
+        assertEquals("25'", Fmt.minutes(25 * 60 + 12))
+    }
+
+    @Test fun trendSmoothsAndInterpolates() {
+        val d0 = friday.toEpochDay() - 20
+        val t = Trend.of(listOf(d0 to 90.0, d0 + 10 to 89.0, d0 + 20 to 88.0), friday.toEpochDay())
+        assertEquals(90.0, t.at(d0)!!, 1e-9)
+        // Il trend insegue le pesate ma resta più alto mentre il peso scende.
+        val now = t.at(friday.toEpochDay())!!
+        assertTrue(now < 90.0 && now > 88.0)
+        assertNull(t.at(d0 - 1))
+        assertTrue(t.change(friday.toEpochDay(), 7)!! < 0)
+    }
+
+    @Test fun goalStatusAndEta() {
+        val today = friday.toEpochDay()
+        val weights = (0..60).map { (today - 60 + it) to 90.0 - it * 0.06 }
+        val trend = Trend.of(weights, today)
+        val s = Goal.status(trend, friday, 82.0, 0.25, 90.0)!!
+        assertTrue(s.onTrack)
+        assertNotNull(s.eta)
+        assertTrue(s.progress in 0f..1f)
+        val flat = Trend.of((0..30).map { (today - 30 + it) to 85.0 }, today)
+        val f = Goal.status(flat, friday, 82.0, 0.25, 85.0)!!
+        assertTrue(f.stable); assertNull(f.eta); assertFalse(f.onTrack)
+    }
+
+    @Test fun dayStatesAndStreak() {
+        val mon = Week.start(friday)
+        assertEquals(LocalDate.of(2026, 10, 12), mon)
+        val slots = listOf(slot(mon), slot(mon.plusDays(2)), slot(mon.plusDays(3)), slot(friday), slot(friday.plusDays(2)))
+        val logs = listOf(log(mon), log(mon.plusDays(2), mini = true))
+        val s = Week.summary(mon, friday, slots, logs, 3)
+        assertEquals(DayState.DONE, s.days[0].state)
+        assertEquals(DayState.REST, s.days[1].state)
+        assertEquals(DayState.MINI, s.days[2].state)
+        assertEquals(DayState.SKIPPED, s.days[3].state)
+        assertEquals(DayState.PLANNED, s.days[4].state)
+        assertTrue(s.days[4].isToday)
+        assertEquals(2, s.sessions)
+        assertFalse(s.active)
+        assertTrue(Week.yesterdaySkipped(friday, slots, logs))
+
+        val prev = mon.minusWeeks(1)
+        val older = (0L..2L).map { log(prev.plusDays(it)) } + (0L..2L).map { log(prev.minusWeeks(1).plusDays(it)) }
+        assertEquals(2, Week.activeStreak(friday, slots, logs + older, emptyMap()))
+        assertEquals(3, Week.activeStreak(friday, slots, logs + older + log(friday), emptyMap()))
+    }
+
+    @Test fun filtersAreOrWithinGroupAndAcrossGroups() {
+        val v = VideoEntity(1, "abcdefghijk", "Core dolce", "Canale", 600, "", "Forza,Dolce,Core")
+        assertTrue(Tags.matches(v, setOf("Forza", "Cardio"), ""))
+        assertTrue(Tags.matches(v, setOf("Forza", "≤15'"), ""))
+        assertFalse(Tags.matches(v, setOf("Forza", "30'+"), ""))
+        assertFalse(Tags.matches(v, setOf("Cardio"), ""))
+        assertTrue(Tags.matches(v, emptySet(), "canale"))
+        assertFalse(Tags.matches(v, emptySet(), "yoga"))
+    }
+
+    @Test fun parsesSharedLinks() {
+        assertEquals("ml6cT4AZdqI", YouTube.parseId("Guarda \"30-Minute HIIT\" su YouTube https://youtu.be/ml6cT4AZdqI?si=abc"))
+        assertEquals("ml6cT4AZdqI", YouTube.parseId("https://www.youtube.com/watch?v=ml6cT4AZdqI&t=10"))
+        assertEquals("ml6cT4AZdqI", YouTube.parseId("https://youtube.com/shorts/ml6cT4AZdqI"))
+        assertNull(YouTube.parseId("nessun link qui"))
+    }
+}
