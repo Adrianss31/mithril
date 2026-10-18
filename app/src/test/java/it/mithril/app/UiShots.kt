@@ -4,10 +4,8 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.os.Looper
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.graphics.asAndroidBitmap
+import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.captureToImage
 import androidx.test.core.app.ApplicationProvider
 import it.mithril.app.data.Repo
 import it.mithril.app.data.SessionLogEntity
@@ -95,7 +93,9 @@ abstract class ShotBase {
         rule.mainClock.autoAdvance = false
         rule.setContent { MithrilTheme(dark = dark) { AppRoot(nav) } }
         repeat(40) { rule.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
-        val bmp: Bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
+        val root = rule.activity.window.decorView
+        val bmp = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        root.draw(Canvas(bmp))
         File(out, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

@@ -63,12 +63,14 @@ private val SymbolsFilled = FontFamily(Font(R.font.symbols_fill1))
 /** Icona Material Symbols Rounded (ligature); [filled] = FILL 1. */
 @Composable
 fun Symbol(name: String, size: Dp = 24.dp, color: Color = M.c.ink, filled: Boolean = false, modifier: Modifier = Modifier) {
+    // Le icone non seguono la scala del carattere di sistema.
+    val px = with(androidx.compose.ui.platform.LocalDensity.current) { size.toSp() }
     Text(
         name,
         modifier = modifier,
         style = TextStyle(
             fontFamily = if (filled) SymbolsFilled else SymbolsOutline,
-            fontSize = (size.value).sp, lineHeight = (size.value).sp, color = color,
+            fontSize = px, lineHeight = px, color = color,
             fontFeatureSettings = "liga",
         ),
         maxLines = 1,
