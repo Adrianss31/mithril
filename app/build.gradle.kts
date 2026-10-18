@@ -19,8 +19,8 @@ android {
         applicationId = "it.mithril.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/Adrianss31/mithril/releases/latest/download/update.json\"")
         buildConfigField("String", "UPDATE_PUBLIC_KEY", "\"$updateKey\"")
@@ -79,6 +79,9 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     testImplementation("junit:junit:4.13.2")

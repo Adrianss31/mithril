@@ -22,21 +22,20 @@ import androidx.compose.runtime.setValue
  * L'origine https serve a YouTube per accettare l'incorporamento (senza referrer risponde errore 153).
  */
 @Stable
-class YouTubePlayerState {
+class YouTubePlayerState : MediaEngine {
     /** -1 non avviato, 0 finito, 1 in riproduzione, 2 in pausa, 3 buffering, 5 pronto. */
-    var state by mutableIntStateOf(-1)
-    var position by mutableFloatStateOf(0f)
-    var duration by mutableFloatStateOf(0f)
+    override var state by mutableIntStateOf(-1)
+    override var position by mutableFloatStateOf(0f)
+    override var duration by mutableFloatStateOf(0f)
     var error by mutableStateOf<Int?>(null)
     var ready by mutableStateOf(false)
     var endedCount by mutableIntStateOf(0)
     internal var web: WebView? = null
+    override var onEnded: (() -> Unit)? = null
 
-    val playing: Boolean get() = state == 1 || state == 3
-
-    fun play() = js("cmd('play')")
-    fun pause() = js("cmd('pause')")
-    fun seek(sec: Float) = js("cmd('seek',$sec)")
+    override fun play() = js("cmd('play')")
+    override fun pause() = js("cmd('pause')")
+    override fun seek(sec: Float) = js("cmd('seek',$sec)")
     fun load(id: String) { position = 0f; duration = 0f; error = null; state = -1; js("cmd('load','$id')") }
     private fun js(code: String) { web?.evaluateJavascript(code, null) }
 
@@ -64,7 +63,7 @@ fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayer
         }
         addJavascriptInterface(object {
             @JavascriptInterface fun onReady(d: Double) = main.post { state.ready = true; state.state = 5; if (d > 0) state.duration = d.toFloat() }
-            @JavascriptInterface fun onState(s: Int) = main.post { state.state = s; if (s == 0) state.endedCount++ }
+            @JavascriptInterface fun onState(s: Int) = main.post { state.state = s; if (s == 0) { state.endedCount++; state.onEnded?.invoke() } }
             @JavascriptInterface fun onError(e: Int) = main.post { state.error = e }
             @JavascriptInterface fun onTime(t: Double, d: Double) = main.post { state.position = t.toFloat(); if (d > 0) state.duration = d.toFloat() }
         }, "Mithril")

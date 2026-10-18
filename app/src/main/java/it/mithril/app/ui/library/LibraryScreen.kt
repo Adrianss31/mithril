@@ -182,7 +182,7 @@ fun VideoCard(v: VideoEntity, modifier: Modifier = Modifier, onClick: () -> Unit
                 Spacer(Modifier.height(4.dp))
                 Text(
                     when (v.timesDone) { 0 -> "mai fatto"; 1 -> "fatto 1 volta"; else -> "fatto ${v.timesDone} volte" } +
-                        if (v.embeddable == false) " · si apre su YouTube" else "",
+                        when { v.isLocal -> " · sul telefono"; v.embeddable == false -> " · si apre su YouTube"; else -> "" },
                     style = T.caption, color = M.c.ink3,
                 )
             }

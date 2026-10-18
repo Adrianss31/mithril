@@ -161,3 +161,16 @@ class CompletionShot : ShotBase() {
         shot("10_completamento") { it.push(Dest.Completion(-1, SessionRequest(null, ids, false), 2)) }
     }
 }
+
+class AddLinkShot : ShotBase() {
+    @Test fun addLink() { seed(); shot("11_aggiungi_video") { it.select(Tab.LIBRARY); it.sheet = SheetKind.AddLink } }
+}
+
+class EditVideoShot : ShotBase() {
+    @Test fun editVideo() {
+        seed()
+        val repo = Repo.get(ApplicationProvider.getApplicationContext<Application>())
+        val v = runBlocking { repo.dao.videoByYoutubeId("aaaaaaaaaa2")!! }
+        shot("12_modifica_video") { it.select(Tab.LIBRARY); it.sheet = SheetKind.AddVideo(edit = v) }
+    }
+}

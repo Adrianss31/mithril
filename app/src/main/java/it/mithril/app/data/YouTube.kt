@@ -14,6 +14,7 @@ data class VideoMeta(
     val durationSec: Int?,
     val thumbnailUrl: String,
     val embeddable: Boolean?,
+    val localUri: String? = null,
 )
 
 /** Metadati YouTube senza chiave API: oEmbed per titolo/canale, pagina pubblica per la durata. */

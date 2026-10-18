@@ -67,6 +67,18 @@ import it.mithril.app.ui.components.Thumb
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.PlayerInk
 import it.mithril.app.ui.theme.T
+import android.view.TextureView
+import android.webkit.WebView
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.viewinterop.AndroidView
+import it.mithril.app.cast.Cast
+import it.mithril.app.cast.CastEngine
+import it.mithril.app.data.LocalVideos
+import it.mithril.app.ui.SheetKind
+import it.mithril.app.ui.components.Symbol
+import kotlinx.coroutines.delay
 
 @Composable
 fun PlayerScreen(req: SessionRequest) {
@@ -74,6 +86,7 @@ fun PlayerScreen(req: SessionRequest) {
     val nav = LocalNav.current
     val toast = LocalToast.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val all by repo.videos.collectAsStateWithLifecycle()
     // La sequenza è fissata all'apertura: cambi in Libreria non la stravolgono a metà.
     val videos = remember(all == null) { Sessions.videosOf(req.videoIds, all ?: emptyList()) }
@@ -85,108 +98,167 @@ fun PlayerScreen(req: SessionRequest) {
     var watched by remember { mutableFloatStateOf(0f) }
     var lastPos by remember { mutableFloatStateOf(0f) }
     var finishing by remember { mutableStateOf(false) }
-    val player = remember { YouTubePlayerState() }
-    val context = LocalContext.current
-    val web = remember { createYouTubeWebView(context, videos[0].youtubeId, player) }
     var leaving by remember { mutableStateOf(false) }
+    val yt = remember { YouTubePlayerState() }
+    var web by remember { mutableStateOf<WebView?>(null) }
+    val local = remember { LocalEngine(context) }
+    LaunchedEffect(Unit) { Cast.init(context) }
+    val castUi by Cast.state.collectAsStateWithLifecycle()
     val current = videos[index]
+    val casting = castUi.connectedTo != null && current.isLocal
+    val engine: MediaEngine = when { casting -> Cast.engine; current.isLocal -> local; else -> yt }
     val total = learned.sum().coerceAtLeast(1)
     val ratio = (watched / total).coerceIn(0f, 1f)
 
     fun complete(mini: Boolean = req.mini) {
         if (finishing) return
         finishing = true
+        engine.pause()
         scope.launch {
-            val done = (0..index).count { k -> k < index || player.state == 0 || player.position > (learned[k] * 0.8f) }
+            val done = (0..index).count { k -> k < index || engine.state == 0 || engine.position > (learned[k] * 0.8f) }
             val ids = videos.map { it.id }
             val id = repo.logSession(req.slotId, mini, ratio, ids, Sessions.title(videos), total)
             nav.replace(Dest.Completion(id, req.copy(mini = mini), done.coerceAtLeast(1)))
         }
     }
-    fun leave(d: Dest) { leaving = true; player.pause(); nav.replace(d) }
-    fun goNext() {
-        if (index < videos.lastIndex) {
-            index++; lastPos = 0f
-            val v = videos[index]
-            if (v.embeddable == false) leave(Dest.External(req, v.id)) else player.load(v.youtubeId)
-        } else complete()
-    }
+    fun leave(d: Dest) { leaving = true; engine.pause(); nav.replace(d) }
+    fun goNext() { if (index < videos.lastIndex) index++ else complete() }
 
-    // Video già noto come non incorporabile.
-    LaunchedEffect(Unit) { if (videos[0].embeddable == false) leave(Dest.External(req, videos[0].id)) }
+    // Carica il video corrente nel motore giusto: cambio video, inizio o fine della trasmissione.
+    var wasCasting by remember { mutableStateOf(false) }
+    LaunchedEffect(index, casting) {
+        val v = current
+        when {
+            v.isLocal -> {
+                yt.pause()
+                val uri = v.localUri!!
+                if (!LocalVideos.readable(context, uri)) { toast.show("File non trovato sul telefono, passo al successivo"); goNext(); return@LaunchedEffect }
+                if (casting) {
+                    val start = if (local.loadedUri == uri) local.position else 0f
+                    local.pause()
+                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, start)?.let { toast.show(it); Cast.disconnect() }
+                } else if (local.loadedUri == uri) {
+                    if (wasCasting) local.seek(Cast.engine.position)
+                    local.play()
+                } else local.load(uri)
+            }
+            v.embeddable == false -> leave(Dest.External(req, v.id))
+            else -> {
+                local.pause()
+                if (wasCasting) Cast.disconnect()
+                if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt) else yt.load(v.youtubeId)
+            }
+        }
+        wasCasting = casting
+        lastPos = engine.position
+    }
+    // Le posizioni di ExoPlayer e della TV vanno lette di continuo.
+    LaunchedEffect(engine) {
+        while (true) {
+            delay(300)
+            when (engine) { is LocalEngine -> engine.tick(); is CastEngine -> engine.tick(); else -> {} }
+        }
+    }
+    SideEffect {
+        yt.onEnded = { if (!current.isLocal) goNext() }
+        local.onEnded = { if (current.isLocal && !casting) goNext() }
+        Cast.engine.onEnded = { if (casting) goNext() }
+    }
     // Durata letta dal player.
-    LaunchedEffect(player.duration, index) {
-        val d = player.duration.toInt()
+    LaunchedEffect(engine.duration, index) {
+        val d = engine.duration.toInt()
         if (d > 0 && learned[index] <= 0) { learned[index] = d; repo.learnDuration(current.id, d) }
     }
     // Tempo guardato: solo l'avanzamento naturale (niente salti in avanti).
-    LaunchedEffect(player.position) {
-        val delta = player.position - lastPos
-        if (player.playing && delta > 0f && delta < 2.5f) watched += delta
-        lastPos = player.position
+    LaunchedEffect(engine.position) {
+        val delta = engine.position - lastPos
+        if (engine.playing && delta > 0f && delta < 2.5f) watched += delta
+        lastPos = engine.position
     }
-    LaunchedEffect(player.endedCount) { if (player.endedCount > 0) goNext() }
-    LaunchedEffect(player.error) {
-        val e = player.error ?: return@LaunchedEffect
+    LaunchedEffect(yt.error) {
+        val e = yt.error ?: return@LaunchedEffect
         when (e) {
             in YouTubePlayerState.NOT_EMBEDDABLE -> { repo.markEmbeddable(current.id, false); leave(Dest.External(req, current.id)) }
             152, 153 -> leave(Dest.External(req, current.id))
             else -> { toast.show("Questo video non è disponibile, passo al successivo"); goNext() }
         }
     }
-    // Schermo acceso e pausa quando l'app va in background.
+    LaunchedEffect(local.error) {
+        if (local.error != null) { toast.show("Non riesco a riprodurre questo file, passo al successivo"); goNext() }
+    }
+    // Schermo acceso; pausa quando l'app va in background (la TV invece continua).
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val currentEngine by rememberUpdatedState(engine)
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         val obs = LifecycleEventObserver { _, ev ->
-            if (ev == Lifecycle.Event.ON_PAUSE) player.pause()
+            if (ev == Lifecycle.Event.ON_PAUSE && currentEngine !is CastEngine) currentEngine.pause()
         }
         lifecycle.addObserver(obs)
         onDispose {
             view.keepScreenOn = false
             lifecycle.removeObserver(obs)
-            player.web?.apply { stopLoading(); loadUrl("about:blank"); destroy() }
-            player.web = null
+            yt.web?.apply { stopLoading(); loadUrl("about:blank"); destroy() }
+            yt.web = null
+            local.release()
+            if (Cast.state.value.connectedTo != null) Cast.disconnect()
         }
     }
-    val close: () -> Unit = { if (ratio >= Sessions.DONE_RATIO) complete() else { leaving = true; player.pause(); nav.pop() } }
+    val close: () -> Unit = { if (ratio >= Sessions.DONE_RATIO) complete() else { leaving = true; engine.pause(); nav.pop() } }
     BackHandler(onBack = close)
 
     Column(Modifier.fillMaxSize().background(M.c.player).windowInsetsPadding(WindowInsets.statusBars)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton("keyboard_arrow_down", close, size = 44.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Chiudi")
-            Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f).padding(end = 44.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            if (castUi.available && current.isLocal) {
+                RoundIconButton(
+                    if (casting) "cast_connected" else "cast", { nav.sheet = SheetKind.CastPicker },
+                    size = 44.dp, iconSize = 24.dp, bg = Color.Transparent, fg = if (casting) M.c.accent else PlayerInk, contentDescription = "Trasmetti alla TV",
+                )
+            } else Spacer(Modifier.width(44.dp))
         }
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
-            NativeHost(web, visible = !finishing && !leaving, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {
+            if (current.isLocal) {
+                if (casting) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Symbol("tv", 44.dp, PlayerInk.copy(alpha = 0.8f))
+                    Spacer(Modifier.height(8.dp))
+                    Text("In riproduzione su ${castUi.connectedTo}", style = T.body14, color = PlayerInk.copy(alpha = 0.8f))
+                } else AndroidView(
+                    factory = { TextureView(it) },
+                    update = { local.exo.setVideoTextureView(it) },
+                    modifier = Modifier.aspectRatio(local.aspect, matchHeightConstraintsFirst = local.aspect < 16f / 9f),
+                )
+            }
+            web?.let { NativeHost(it, visible = !finishing && !leaving && !current.isLocal, modifier = Modifier.fillMaxSize()) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(14.dp))
-            Segments(learned, index, if (player.duration > 0) player.position / player.duration else 0f)
+            Segments(learned, index, if (engine.duration > 0) engine.position / engine.duration else 0f)
             Spacer(Modifier.height(18.dp))
             Text("Video ${index + 1} di ${videos.size} · ${Tags.kind(current.tagList)}", style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
             Spacer(Modifier.height(4.dp))
             Text(current.title, style = T.heroTitle, color = PlayerInk, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(current.channel, style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
             Spacer(Modifier.height(18.dp))
-            val prog by animateFloatAsState(if (player.duration > 0) (player.position / player.duration).coerceIn(0f, 1f) else 0f, tween(450), label = "prog")
+            val prog by animateFloatAsState(if (engine.duration > 0) (engine.position / engine.duration).coerceIn(0f, 1f) else 0f, tween(450), label = "prog")
             Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(PlayerInk.copy(alpha = 0.15f))) {
                 Box(Modifier.fillMaxWidth(prog).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(M.c.accent))
             }
             Spacer(Modifier.height(6.dp))
             Row {
-                Text(Fmt.clock(player.position.toInt().coerceAtLeast(0)).let { if (player.position < 1f) "0:00" else it }, style = T.caption, color = PlayerInk.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-                Text(Fmt.clock((if (player.duration > 0) player.duration.toInt() else learned[index])), style = T.caption, color = PlayerInk.copy(alpha = 0.6f))
+                Text(if (engine.position < 1f) "0:00" else Fmt.clock(engine.position.toInt()), style = T.caption, color = PlayerInk.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
+                Text(Fmt.clock(if (engine.duration > 0) engine.duration.toInt() else learned[index]), style = T.caption, color = PlayerInk.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                RoundIconButton("replay", { player.seek(0f); player.play() }, size = 52.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Ricomincia il video")
+                RoundIconButton("replay", { engine.seek(0f); engine.play() }, size = 52.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Ricomincia il video")
                 RoundIconButton(
-                    if (player.playing) "pause" else "play_arrow",
-                    { if (player.playing) player.pause() else player.play() },
+                    if (engine.playing) "pause" else "play_arrow",
+                    { if (engine.playing) engine.pause() else engine.play() },
                     size = 76.dp, iconSize = 38.dp, bg = M.c.accent, fg = M.c.onAccent, filled = true,
-                    contentDescription = if (player.playing) "Pausa" else "Riproduci",
+                    contentDescription = if (engine.playing) "Pausa" else "Riproduci",
                 )
                 RoundIconButton("skip_next", { goNext() }, size = 52.dp, iconSize = 30.dp, bg = Color.Transparent, fg = PlayerInk, enabled = !finishing, contentDescription = "Video successivo")
             }
@@ -204,6 +276,7 @@ fun PlayerScreen(req: SessionRequest) {
         )
     }
 }
+
 
 /** Un segmento per video, larghezza proporzionale ai minuti. */
 @Composable

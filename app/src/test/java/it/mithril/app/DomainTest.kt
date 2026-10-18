@@ -8,6 +8,7 @@ import it.mithril.app.data.YouTube
 import it.mithril.app.domain.DayState
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
+import it.mithril.app.domain.TimeSuggest
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
 import org.junit.Assert.assertEquals
@@ -101,5 +102,16 @@ class DomainTest {
         assertEquals("ml6cT4AZdqI", YouTube.parseId("https://www.youtube.com/watch?v=ml6cT4AZdqI&t=10"))
         assertEquals("ml6cT4AZdqI", YouTube.parseId("https://youtube.com/shorts/ml6cT4AZdqI"))
         assertNull(YouTube.parseId("nessun link qui"))
+    }
+
+    @Test fun suggestedTimesFollowUsage() {
+        assertEquals(TimeSuggest.DEFAULTS, TimeSuggest.suggest(emptyList(), friday))
+        val custom = 18 * 60 + 45
+        // Poche pianificazioni: l'orario personalizzato compare accanto ai predefiniti.
+        val few = (1..3).map { SlotEntity(it.toLong(), friday.toEpochDay() - it * 7, custom, "Soggiorno", "1") }
+        assertTrue(custom in TimeSuggest.suggest(few, friday))
+        // Tante pianificazioni sempre agli stessi orari: i predefiniti mai scelti spariscono.
+        val many = (1..40).map { SlotEntity(it.toLong(), friday.toEpochDay() - it, if (it % 2 == 0) custom else 7 * 60, "Soggiorno", "1") }
+        assertEquals(listOf(7 * 60, custom), TimeSuggest.suggest(many, friday))
     }
 }

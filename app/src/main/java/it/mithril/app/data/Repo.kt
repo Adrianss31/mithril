@@ -49,11 +49,11 @@ class Repo(private val context: Context) {
     suspend fun addVideo(meta: VideoMeta, tags: Set<String>, miniId: Long?): Long {
         val existing = dao.videoByYoutubeId(meta.youtubeId)
         val id = if (existing != null) {
-            dao.updateVideo(existing.copy(title = meta.title, channel = meta.channel, durationSec = meta.durationSec ?: existing.durationSec,
+            dao.updateVideo(existing.copy(title = meta.title, localUri = meta.localUri ?: existing.localUri, channel = meta.channel, durationSec = meta.durationSec ?: existing.durationSec,
                 tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable ?: existing.embeddable))
             existing.id
         } else dao.insertVideo(VideoEntity(youtubeId = meta.youtubeId, title = meta.title, channel = meta.channel, durationSec = meta.durationSec,
-            thumbnailUrl = meta.thumbnailUrl, tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable))
+            thumbnailUrl = meta.thumbnailUrl, tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable, localUri = meta.localUri))
         changed(); return id
     }
     suspend fun updateVideo(v: VideoEntity) { dao.updateVideo(v); changed() }
@@ -66,6 +66,7 @@ class Repo(private val context: Context) {
                 if (rest.isEmpty()) dao.deleteSlot(s.id) else dao.upsertSlot(s.copy(videoIds = rest.joinToString(",")))
             }
         }
+        dao.video(id)?.let { LocalVideos.forget(context, it) }
         dao.deleteVideo(id); changed()
     }
     fun learnDuration(id: Long, sec: Int) { if (sec > 0) scope.launch { dao.fillDuration(id, sec) } }

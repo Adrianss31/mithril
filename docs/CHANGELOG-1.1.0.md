@@ -1,0 +1,4 @@
+- **Video dal telefono**: in Libreria → Aggiungi → "Scegli un file dal telefono". Mithril non copia il file, lo legge dove si trova; si guarda anche senza internet.
+- **Trasmetti alla TV**: durante un video del telefono, il pulsante in alto lo manda a Google TV o Chromecast sulla stessa rete Wi-Fi. I comandi del telefono controllano la TV e la sessione conta come sempre.
+- **Titoli modificabili**: tocca un video in Libreria e cambia il titolo, così lo ritrovi più facilmente quando pianifichi.
+- **Orari proposti che imparano**: nel foglio "Nuovo slot" compaiono gli orari che scegli di solito; quelli predefiniti che non usi mai spariscono piano piano.

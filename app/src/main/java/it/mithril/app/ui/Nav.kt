@@ -40,6 +40,7 @@ sealed interface SheetKind {
     data class NewSlot(val date: LocalDate, val edit: SlotEntity? = null, val onlyWhenWhere: Boolean = false, val onPicked: ((Int, String) -> Unit)? = null) : SheetKind
     data class Weigh(val editDate: LocalDate? = null) : SheetKind
     data object AddLink : SheetKind
+    data object CastPicker : SheetKind
 }
 
 @Stable

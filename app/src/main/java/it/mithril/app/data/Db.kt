@@ -14,6 +14,8 @@ import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** Video salvato in Libreria. [tags] è un elenco separato da virgole (vedi [Tags]). */
@@ -30,8 +32,11 @@ data class VideoEntity(
     val embeddable: Boolean? = null,
     val timesDone: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Video salvato sul telefono (content:// con permesso persistente); null per i video YouTube. */
+    val localUri: String? = null,
 ) {
     val tagList: List<String> get() = Tags.parse(tags)
+    val isLocal: Boolean get() = localUri != null
 }
 
 /** Slot del planner: giorno (epochDay), ora (minuti dalla mezzanotte), luogo e sequenza ordinata di video. */
@@ -123,7 +128,7 @@ abstract class MithrilDao {
 
 @Database(
     entities = [VideoEntity::class, SlotEntity::class, SessionLogEntity::class, WeightEntity::class, WeekPlanEntity::class, ReviewAnswerEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class MithrilDb : RoomDatabase() {
@@ -131,8 +136,11 @@ abstract class MithrilDb : RoomDatabase() {
 
     companion object {
         @Volatile private var instance: MithrilDb? = null
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) = db.execSQL("ALTER TABLE video ADD COLUMN localUri TEXT")
+        }
         fun get(context: Context): MithrilDb = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db").build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db").addMigrations(MIGRATION_1_2).build().also { instance = it }
         }
     }
 }

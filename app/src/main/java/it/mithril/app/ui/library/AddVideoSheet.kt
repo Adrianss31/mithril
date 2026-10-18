@@ -2,6 +2,10 @@ package it.mithril.app.ui.library
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import it.mithril.app.data.LocalVideos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +40,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.mithril.app.ui.rememberRepo
@@ -75,10 +78,10 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
     VideoForm(
         meta = meta,
         edit = edit,
-        onSave = { tags, mini ->
+        onSave = { title, tags, mini ->
             scope.launch {
-                if (edit != null) repo.updateVideo(edit.copy(tags = Tags.join(tags), miniVideoId = mini))
-                else repo.addVideo(meta, tags, mini)
+                if (edit != null) repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini))
+                else repo.addVideo(meta.copy(title = title), tags, mini)
                 toast.show(if (edit != null) "Video aggiornato" else "Salvato in Libreria")
             }
             onDone()
@@ -101,12 +104,14 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
 fun ColumnScope.VideoForm(
     meta: VideoMeta,
     edit: VideoEntity?,
-    onSave: (Set<String>, Long?) -> Unit,
+    onSave: (title: String, tags: Set<String>, mini: Long?) -> Unit,
     onDelete: (() -> Unit)? = null,
     onPlay: (() -> Unit)? = null,
 ) {
     val repo = rememberRepo()
     val videos by repo.videos.collectAsStateWithLifecycle()
+    var title by remember(meta.youtubeId) { mutableStateOf(edit?.title ?: meta.title) }
+    val local = meta.localUri != null
     var tags by remember(meta.youtubeId) { mutableStateOf(edit?.tagList?.toSet() ?: Tags.suggest(meta.title, meta.durationSec)) }
     var mini by remember(meta.youtubeId) { mutableStateOf(edit?.miniVideoId) }
     val minis = (videos ?: emptyList()).filter { it.youtubeId != meta.youtubeId && (it.durationSec ?: Int.MAX_VALUE) <= Sessions.MINI_MAX_SEC }
@@ -115,9 +120,9 @@ fun ColumnScope.VideoForm(
         Text(if (edit != null) "Modifica video" else "Aggiungi video", style = T.sheetTitle, color = M.c.ink, modifier = Modifier.weight(1f))
         if (onDelete != null) RoundIconButton("delete", onDelete, size = 36.dp, iconSize = 20.dp, contentDescription = "Elimina video")
         else {
-            Symbol("share", 18.dp, M.c.ink2)
+            Symbol(if (local) "smartphone" else "share", 18.dp, M.c.ink2)
             Spacer(Modifier.width(4.dp))
-            Text("da YouTube", style = T.secondary, color = M.c.ink2)
+            Text(if (local) "dal telefono" else "da YouTube", style = T.secondary, color = M.c.ink2)
         }
     }
     Spacer(Modifier.height(14.dp))
@@ -127,7 +132,7 @@ fun ColumnScope.VideoForm(
                 Thumb(meta.thumbnailUrl, maxWidth, 150.dp, radius = 14.dp, duration = Fmt.clock(meta.durationSec))
             }
             Spacer(Modifier.height(10.dp))
-            Text(meta.title, style = ts(17, FontWeight.SemiBold), color = M.c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
+            TitleField(title) { title = it }
             Text(
                 meta.channel + (meta.durationSec?.let { " · ${(it + 30) / 60} min" } ?: ""),
                 style = T.secondary, color = M.c.ink2, modifier = Modifier.padding(horizontal = 4.dp),
@@ -138,7 +143,11 @@ fun ColumnScope.VideoForm(
                     Symbol("auto_awesome", 14.dp, M.c.ink3)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        if (meta.durationSec != null) "Titolo, canale e durata recuperati in automatico" else "Durata: la leggo al primo avvio",
+                        when {
+                            local -> "Dalla memoria del telefono: si guarda anche senza internet"
+                            meta.durationSec != null -> "Titolo, canale e durata recuperati in automatico"
+                            else -> "Durata: la leggo al primo avvio"
+                        },
                         style = T.caption, color = M.c.ink3,
                     )
                 }
@@ -166,7 +175,7 @@ fun ColumnScope.VideoForm(
     Spacer(Modifier.height(18.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (onPlay != null) TonalButton("Avvia", onPlay, icon = "play_arrow")
-        PrimaryButton(if (edit != null) "Salva" else "Salva in Libreria", { onSave(tags, mini) }, Modifier.weight(1f))
+        PrimaryButton(if (edit != null) "Salva" else "Salva in Libreria", { onSave(title.trim().ifBlank { meta.title }, tags, mini) }, Modifier.weight(1f))
     }
 }
 
@@ -178,6 +187,17 @@ fun ColumnScope.AddLinkSheet(onDone: (SheetKind?) -> Unit) {
     val scope = rememberCoroutineScope()
     var text by remember { mutableStateOf(clipboardLink(context) ?: "") }
     var loading by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            importing = true
+            scope.launch {
+                val meta = runCatching { LocalVideos.import(context, uri) }.getOrNull()
+                importing = false
+                if (meta == null) toast.show("Non riesco a leggere questo file") else onDone(SheetKind.AddVideo(meta))
+            }
+        }
+    }
     val id = YouTube.parseId(text)
     fun go() {
         val vid = id ?: return toast.show("Non trovo un link YouTube valido")
@@ -209,6 +229,31 @@ fun ColumnScope.AddLinkSheet(onDone: (SheetKind?) -> Unit) {
     PrimaryButton(if (loading) "Recupero i dettagli…" else "Continua", { if (!loading) go() }, Modifier.fillMaxWidth(), enabled = id != null)
     Spacer(Modifier.height(10.dp))
     OutlineButton("Cerca su YouTube", { openYouTube(context); onDone(null) }, Modifier.fillMaxWidth(), icon = "open_in_new")
+    Spacer(Modifier.height(20.dp))
+    Overline("Oppure dal telefono")
+    Spacer(Modifier.height(6.dp))
+    Text("Un video che hai già in memoria (un corso comprato, un tuo video): si guarda senza internet e si può trasmettere alla TV.", style = T.body14, color = M.c.ink2)
+    Spacer(Modifier.height(12.dp))
+    TonalButton(if (importing) "Leggo il file…" else "Scegli un file dal telefono", { if (!importing) picker.launch(arrayOf("video/*")) }, Modifier.fillMaxWidth(), icon = "folder_open")
+}
+
+@Composable
+private fun TitleField(value: String, onChange: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(M.c.surface).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicTextField(
+            value, { onChange(it.take(120)) },
+            textStyle = ts(17, FontWeight.SemiBold).copy(color = M.c.ink),
+            cursorBrush = SolidColor(M.c.accent),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+            maxLines = 3,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Symbol("edit", 18.dp, M.c.ink3)
+    }
 }
 
 private fun clipboardLink(context: Context): String? = runCatching {

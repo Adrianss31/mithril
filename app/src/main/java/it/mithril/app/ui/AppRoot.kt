@@ -59,6 +59,7 @@ import it.mithril.app.ui.planner.NewSlotSheet
 import it.mithril.app.ui.planner.PlanWeekScreen
 import it.mithril.app.ui.planner.PlannerScreen
 import it.mithril.app.ui.review.ReviewScreen
+import it.mithril.app.ui.session.CastSheet
 import it.mithril.app.ui.session.CompletionScreen
 import it.mithril.app.ui.session.ExternalVideoScreen
 import it.mithril.app.ui.session.PlayerScreen
@@ -88,6 +89,7 @@ fun AppRoot(nav: Navigator, toast: ToastState = remember { ToastState() }) {
                     is SheetKind.NewSlot -> NewSlotSheet(s, onDone = { nav.sheet = null })
                     is SheetKind.Weigh -> WeighSheet(s, onDone = { nav.sheet = null })
                     SheetKind.AddLink -> AddLinkSheet(onDone = { nav.sheet = it })
+                    SheetKind.CastPicker -> CastSheet(onDone = { nav.sheet = null })
                 }
             }
             ToastHost(toast, bottom = if (nav.stack.isEmpty()) 104.dp else 32.dp)

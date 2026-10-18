@@ -57,6 +57,7 @@ import it.mithril.app.ui.theme.ts
 import kotlinx.coroutines.launch
 import it.mithril.app.data.SlotEntity
 import it.mithril.app.domain.Fmt
+import it.mithril.app.domain.TimeSuggest
 import it.mithril.app.domain.Sessions
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Chip
@@ -69,8 +70,6 @@ import it.mithril.app.ui.components.Symbol
 import it.mithril.app.ui.theme.Ease
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.T
-
-private val TIMES = listOf(7 * 60, 7 * 60 + 30, 12 * 60 + 30, 18 * 60 + 30, 19 * 60 + 30, 21 * 60)
 
 /** Foglio "Nuovo slot" in 3 passi: cosa (in ordine), quando, dove. Con [SheetKind.NewSlot.onlyWhenWhere] solo ora e luogo. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -89,6 +88,7 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
     var time by remember(s) { mutableIntStateOf(s.edit?.timeMin ?: 18 * 60 + 30) }
     var place by remember(s) { mutableStateOf(s.edit?.place ?: "Soggiorno") }
     var custom by remember(s) { mutableStateOf(false) }
+    val times = remember(slots) { TimeSuggest.suggest(slots, java.time.LocalDate.now()) }
     val knownPlaces = remember(slots) { (Places.DEFAULTS + slots.map { it.place }).distinct().take(6) }
     LaunchedEffect(s) {
         if (s.edit == null) repo.lastSlotLike(s.date)?.let { time = it.timeMin; place = it.place }
@@ -149,8 +149,8 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
                     Overline("Quando")
                     Spacer(Modifier.height(10.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TIMES.forEach { t -> Chip(Fmt.time(t), time == t, { time = t }) }
-                        val other = time !in TIMES
+                        times.forEach { t -> Chip(Fmt.time(t), time == t, { time = t }) }
+                        val other = time !in times
                         Chip(if (other) Fmt.time(time) else "Altro…", other, {
                             TimePickerDialog(context, { _, h, m -> time = h * 60 + m }, time / 60, time % 60, true).show()
                         })
