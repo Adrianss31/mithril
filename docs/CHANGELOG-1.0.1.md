@@ -1,0 +1,1 @@
+- **Player**: ora il video si vede. Prima si sentiva l'audio e la barra avanzava, ma l'immagine restava nera.

@@ -46,7 +46,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -86,6 +86,9 @@ fun PlayerScreen(req: SessionRequest) {
     var lastPos by remember { mutableFloatStateOf(0f) }
     var finishing by remember { mutableStateOf(false) }
     val player = remember { YouTubePlayerState() }
+    val context = LocalContext.current
+    val web = remember { createYouTubeWebView(context, videos[0].youtubeId, player) }
+    var leaving by remember { mutableStateOf(false) }
     val current = videos[index]
     val total = learned.sum().coerceAtLeast(1)
     val ratio = (watched / total).coerceIn(0f, 1f)
@@ -100,16 +103,17 @@ fun PlayerScreen(req: SessionRequest) {
             nav.replace(Dest.Completion(id, req.copy(mini = mini), done.coerceAtLeast(1)))
         }
     }
+    fun leave(d: Dest) { leaving = true; player.pause(); nav.replace(d) }
     fun goNext() {
         if (index < videos.lastIndex) {
             index++; lastPos = 0f
             val v = videos[index]
-            if (v.embeddable == false) nav.replace(Dest.External(req, v.id)) else player.load(v.youtubeId)
+            if (v.embeddable == false) leave(Dest.External(req, v.id)) else player.load(v.youtubeId)
         } else complete()
     }
 
     // Video già noto come non incorporabile.
-    LaunchedEffect(Unit) { if (videos[0].embeddable == false) nav.replace(Dest.External(req, videos[0].id)) }
+    LaunchedEffect(Unit) { if (videos[0].embeddable == false) leave(Dest.External(req, videos[0].id)) }
     // Durata letta dal player.
     LaunchedEffect(player.duration, index) {
         val d = player.duration.toInt()
@@ -125,8 +129,8 @@ fun PlayerScreen(req: SessionRequest) {
     LaunchedEffect(player.error) {
         val e = player.error ?: return@LaunchedEffect
         when (e) {
-            in YouTubePlayerState.NOT_EMBEDDABLE -> { repo.markEmbeddable(current.id, false); nav.replace(Dest.External(req, current.id)) }
-            152, 153 -> nav.replace(Dest.External(req, current.id))
+            in YouTubePlayerState.NOT_EMBEDDABLE -> { repo.markEmbeddable(current.id, false); leave(Dest.External(req, current.id)) }
+            152, 153 -> leave(Dest.External(req, current.id))
             else -> { toast.show("Questo video non è disponibile, passo al successivo"); goNext() }
         }
     }
@@ -146,7 +150,7 @@ fun PlayerScreen(req: SessionRequest) {
             player.web = null
         }
     }
-    val close: () -> Unit = { if (ratio >= Sessions.DONE_RATIO) complete() else nav.pop() }
+    val close: () -> Unit = { if (ratio >= Sessions.DONE_RATIO) complete() else { leaving = true; player.pause(); nav.pop() } }
     BackHandler(onBack = close)
 
     Column(Modifier.fillMaxSize().background(M.c.player).windowInsetsPadding(WindowInsets.statusBars)) {
@@ -155,7 +159,7 @@ fun PlayerScreen(req: SessionRequest) {
             Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f).padding(end = 44.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
-            AndroidView(factory = { ctx -> createYouTubeWebView(ctx, videos[0].youtubeId, player) }, modifier = Modifier.fillMaxSize())
+            NativeHost(web, visible = !finishing && !leaving, modifier = Modifier.fillMaxSize())
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(14.dp))
