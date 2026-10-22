@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import it.mithril.app.data.Repo
 import it.mithril.app.data.SessionLogEntity
@@ -182,42 +181,31 @@ class EditVideoShot : ShotBase() {
     }
 }
 
+// Schermo alto: tutto il pannello in una sola immagine, senza scorrere.
+@Config(application = Application::class, sdk = [34], qualifiers = "w412dp-h2400dp-xxhdpi")
 class StatsShot : ShotBase() {
     @Test fun stats() { seed(); shot("13_statistiche") { it.select(Tab.STATS) } }
 }
 
+@Config(application = Application::class, sdk = [34], qualifiers = "w412dp-h2400dp-xxhdpi")
 class StatsDarkShot : ShotBase() {
     @Test fun statsDark() { seed(); shot("13b_statistiche_scuro", dark = true) { it.select(Tab.STATS) } }
 }
 
-class StatsLowerShot : ShotBase() {
-    @Test fun statsLower() {
-        seed()
-        shot("13c_statistiche_sotto", action = { rule.onNodeWithText("Settimana per settimana").performScrollTo() }) { it.select(Tab.STATS) }
-    }
-}
-
-class StatsBottomShot : ShotBase() {
-    @Test fun statsBottom() {
-        seed()
-        shot("13d_statistiche_fondo", action = { rule.onNodeWithText("Abitudini").performScrollTo() }) { it.select(Tab.STATS) }
-    }
+class StatsNarrowShot : ShotBase() {
+    @Test @Config(qualifiers = "w360dp-h780dp-xxhdpi") fun statsNarrow() { seed(); shot("13c_statistiche_360") { it.select(Tab.STATS) } }
 }
 
 class PlanWeekPickShot : ShotBase() {
     @Test fun planPick() {
         seed()
         shot("08b_pianifica_piu_giorni", action = {
-            repeat(2) {
-                rule.onNodeWithText("Avanti").performClick()
-                repeat(10) { rule.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
-            }
+            // Durante i tocchi il tempo scorre da solo, altrimenti l'attesa dell'inattività non finisce.
+            rule.mainClock.autoAdvance = true
+            repeat(2) { rule.onNodeWithText("Avanti").performClick() }
             rule.onNodeWithText("Core 10'").performClick()
-            listOf("Lunedì", "Mercoledì", "Venerdì").forEach { d ->
-                rule.mainClock.advanceTimeBy(300); shadowOf(Looper.getMainLooper()).idle()
-                rule.onNodeWithText(d).performClick()
-            }
+            listOf("Lunedì", "Mercoledì", "Venerdì").forEach { rule.onNodeWithText(it).performClick() }
+            rule.mainClock.autoAdvance = false
         }) { it.push(Dest.PlanWeek(Week.start(LocalDate.now()).plusWeeks(1))) }
     }
 }
-
