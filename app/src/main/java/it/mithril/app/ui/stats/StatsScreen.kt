@@ -213,6 +213,7 @@ private fun Kpis(s: StatsSummary, period: StatsPeriod, health: StepsState, modif
                 "Passi · media", s.stepsAvg?.let { Fmt.thousands(it) } ?: "—",
                 when {
                     s.stepsAvg != null -> "obiettivo in ${s.stepsGoalDays} giorni su ${s.stepsDays}"
+                    !health.available -> "Health Connect non disponibile"
                     !health.granted -> "Health Connect non collegato"
                     else -> "nessun dato nel periodo"
                 },

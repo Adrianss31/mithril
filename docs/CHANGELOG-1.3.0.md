@@ -1,0 +1,6 @@
+- **Statistiche**: nuova scheda con i numeri del periodo (4 settimane, 3 mesi, anno o tutto): sessioni, minuti, settimane attive con serie e record, passi medi, trend del peso, pesate.
+  - **Calendario** del mese con sessioni, mini, giorni saltati, passi e pesate. Si può vedere anche solo i passi o solo il peso. Toccando un giorno ne vedi il dettaglio.
+  - **Grafici**: sessioni o minuti settimana per settimana con l'obiettivo, passi al giorno con la media a 7 giorni, trend del peso.
+  - **Abitudini**: giorno preferito, ora tipica, fatica media, ripartenze dopo un salto e video più fatti.
+- **Pianifica la settimana**: tocchi un video e poi tutti i giorni in cui farlo, senza riselezionarlo ogni volta. Toccando di nuovo un giorno lo togli. Accanto a ogni video c'è il numero di giorni in cui l'hai messo.
+- **Passi più vecchi**: dove il telefono lo permette, Mithril chiede anche di leggere la cronologia dei passi di Health Connect per le statistiche.
