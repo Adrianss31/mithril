@@ -6,6 +6,9 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import it.mithril.app.data.Repo
 import it.mithril.app.data.SessionLogEntity
@@ -87,12 +90,16 @@ abstract class ShotBase {
         }
     }
 
-    protected fun shot(name: String, dark: Boolean = false, setup: (Navigator) -> Unit = {}) {
+    protected fun shot(name: String, dark: Boolean = false, action: (() -> Unit)? = null, setup: (Navigator) -> Unit = {}) {
         val nav = Navigator()
         setup(nav)
         rule.mainClock.autoAdvance = false
         rule.setContent { MithrilTheme(dark = dark) { AppRoot(nav) } }
         repeat(40) { rule.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
+        if (action != null) {
+            action()
+            repeat(30) { rule.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
+        }
         val root = rule.activity.window.decorView
         val bmp = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
         root.draw(Canvas(bmp))
@@ -174,3 +181,43 @@ class EditVideoShot : ShotBase() {
         shot("12_modifica_video") { it.select(Tab.LIBRARY); it.sheet = SheetKind.AddVideo(edit = v) }
     }
 }
+
+class StatsShot : ShotBase() {
+    @Test fun stats() { seed(); shot("13_statistiche") { it.select(Tab.STATS) } }
+}
+
+class StatsDarkShot : ShotBase() {
+    @Test fun statsDark() { seed(); shot("13b_statistiche_scuro", dark = true) { it.select(Tab.STATS) } }
+}
+
+class StatsLowerShot : ShotBase() {
+    @Test fun statsLower() {
+        seed()
+        shot("13c_statistiche_sotto", action = { rule.onNodeWithText("Settimana per settimana").performScrollTo() }) { it.select(Tab.STATS) }
+    }
+}
+
+class StatsBottomShot : ShotBase() {
+    @Test fun statsBottom() {
+        seed()
+        shot("13d_statistiche_fondo", action = { rule.onNodeWithText("Abitudini").performScrollTo() }) { it.select(Tab.STATS) }
+    }
+}
+
+class PlanWeekPickShot : ShotBase() {
+    @Test fun planPick() {
+        seed()
+        shot("08b_pianifica_piu_giorni", action = {
+            repeat(2) {
+                rule.onNodeWithText("Avanti").performClick()
+                repeat(10) { rule.mainClock.advanceTimeBy(100); shadowOf(Looper.getMainLooper()).idle() }
+            }
+            rule.onNodeWithText("Core 10'").performClick()
+            listOf("Lunedì", "Mercoledì", "Venerdì").forEach { d ->
+                rule.mainClock.advanceTimeBy(300); shadowOf(Looper.getMainLooper()).idle()
+                rule.onNodeWithText(d).performClick()
+            }
+        }) { it.push(Dest.PlanWeek(Week.start(LocalDate.now()).plusWeeks(1))) }
+    }
+}
+

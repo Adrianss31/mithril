@@ -8,6 +8,8 @@ import it.mithril.app.data.YouTube
 import it.mithril.app.domain.DayState
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
+import it.mithril.app.domain.Stats
+import it.mithril.app.domain.StatsPeriod
 import it.mithril.app.domain.TimeSuggest
 import it.mithril.app.widget.formatSteps
 import it.mithril.app.domain.Trend
@@ -120,5 +122,29 @@ class DomainTest {
         assertEquals("7,2k", formatSteps(7210))
         assertEquals("850", formatSteps(850))
         assertEquals("—", formatSteps(null))
+    }
+
+    @Test fun statsSummarizeThePeriod() {
+        val mon = Week.start(friday) // 12 ottobre
+        val slots = listOf(slot(mon), slot(mon.plusDays(1)), slot(mon.plusDays(3)))
+        val logs = listOf(log(mon), log(mon.plusDays(2), mini = true), log(mon.plusDays(4)), log(mon.minusDays(7)), log(mon.minusDays(5)), log(mon.minusDays(3)))
+        // Martedì saltato e recuperato mercoledì con una mini; giovedì saltato e recuperato venerdì.
+        val steps = mapOf(mon.toEpochDay() to 9000, mon.plusDays(1).toEpochDay() to 3000, mon.plusDays(2).toEpochDay() to 6000)
+        val weights = (0..20).map { friday.minusDays(it.toLong()).toEpochDay() to 80.0 + it * 0.1 }
+        val from = Stats.from(StatsPeriod.W4, friday, logs, weights, slots)
+        assertEquals(friday.minusDays(27), from)
+        val s = Stats.summary(from, friday, slots, logs, emptyMap(), weights, steps, 7000)
+        assertEquals(5, s.sessions); assertEquals(1, s.mini)
+        assertEquals(60, s.minutes) // 6 sessioni da 10'
+        assertEquals(2, s.activeWeeks)
+        assertEquals(2 to 2, s.streak to s.bestStreak)
+        assertEquals(6000, s.stepsAvg)
+        assertEquals(1, s.stepsGoalDays)
+        assertEquals(7500, s.stepsTraining); assertEquals(3000, s.stepsRest)
+        assertEquals(2, s.skipped); assertEquals(2, s.recovered)
+        assertTrue(s.trendChange!! < 0)
+        assertEquals(listOf(2, 0, 2, 0, 2, 0, 0), s.weekday)
+        assertEquals(listOf(1L to 6), s.topVideos)
+        assertEquals(listOf(9000, 6000, 6000), Stats.rollingSteps(listOf(mon.toEpochDay(), mon.plusDays(1).toEpochDay(), mon.plusDays(2).toEpochDay()), steps))
     }
 }

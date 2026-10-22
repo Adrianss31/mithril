@@ -64,6 +64,7 @@ import it.mithril.app.ui.session.CompletionScreen
 import it.mithril.app.ui.session.ExternalVideoScreen
 import it.mithril.app.ui.session.PlayerScreen
 import it.mithril.app.ui.settings.SettingsScreen
+import it.mithril.app.ui.stats.StatsScreen
 import it.mithril.app.ui.theme.Ease
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.today.TodayScreen
@@ -116,6 +117,7 @@ private fun TabsContent(nav: Navigator) {
                 Tab.PLANNER -> PlannerScreen()
                 Tab.LIBRARY -> LibraryScreen()
                 Tab.WEIGHT -> WeightScreen()
+                Tab.STATS -> StatsScreen()
             }
         }
     }

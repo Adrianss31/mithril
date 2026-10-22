@@ -45,6 +45,9 @@ data class StepsState(
     val today: Int? = null,
     /** Passi per giorno (epochDay → passi) delle ultime settimane. */
     val byDay: Map<Long, Int> = emptyMap(),
+    /** Il telefono permette di leggere i passi di più di 30 giorni prima del permesso, e se è concesso. */
+    val historyAvailable: Boolean = false,
+    val historyGranted: Boolean = false,
 ) {
     fun average(from: LocalDate, to: LocalDate): Int? {
         val days = (from.toEpochDay()..minOf(to.toEpochDay(), LocalDate.now().toEpochDay())).toList()
@@ -71,13 +74,15 @@ object Health {
     suspend fun refresh(context: Context) {
         if (!available(context)) { _state.value = StepsState(available = false); return }
         val client = HealthConnectClient.getOrCreate(context)
-        runCatching {
-            if (client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE) {
-                requestSet = PERMISSIONS + HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
-            }
-        }
-        val granted = runCatching { client.permissionController.getGrantedPermissions().containsAll(PERMISSIONS) }.getOrDefault(false)
-        if (!granted) { _state.value = StepsState(available = true, granted = false); return }
+        fun feature(f: Int) = runCatching { client.features.getFeatureStatus(f) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE }.getOrDefault(false)
+        val historyAvailable = feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY)
+        requestSet = PERMISSIONS +
+            (if (feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)) setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND) else emptySet()) +
+            (if (historyAvailable) setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY) else emptySet())
+        val grantedSet = runCatching { client.permissionController.getGrantedPermissions() }.getOrDefault(emptySet())
+        val granted = grantedSet.containsAll(PERMISSIONS)
+        if (!granted) { _state.value = StepsState(available = true, granted = false, historyAvailable = historyAvailable); return }
+        val historyGranted = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in grantedSet
         val today = LocalDate.now()
         val start = today.minusDays(27)
         val read = runCatching {
@@ -95,7 +100,30 @@ object Health {
         }.getOrNull()
         // In background Health Connect può rifiutare la lettura: si tiene l'ultimo valore letto oggi.
         val today0 = if (read.isSuccess) (todaySteps ?: 0).also { StepsCache.save(context, it) } else StepsCache.today(context)
-        _state.value = StepsState(available = true, granted = true, today = today0, byDay = byDay.ifEmpty { _state.value.byDay })
+        _state.value = StepsState(available = true, granted = true, today = today0, byDay = byDay.ifEmpty { _state.value.byDay }, historyAvailable = historyAvailable, historyGranted = historyGranted)
+    }
+
+    /** Passi per giorno tra [from] e [to] (per le statistiche); vuoto se Health Connect non è leggibile. */
+    suspend fun stepsBetween(context: Context, from: LocalDate, to: LocalDate): Map<Long, Int> {
+        if (!available(context) || !state.value.granted) return emptyMap()
+        val client = HealthConnectClient.getOrCreate(context)
+        val out = HashMap<Long, Int>()
+        // A blocchi di 90 giorni, per non chiedere troppi intervalli in una volta.
+        var start = from
+        while (!start.isAfter(to)) {
+            val end = minOf(start.plusDays(89), to)
+            runCatching {
+                client.aggregateGroupByPeriod(
+                    AggregateGroupByPeriodRequest(
+                        metrics = setOf(StepsRecord.COUNT_TOTAL),
+                        timeRangeFilter = TimeRangeFilter.between(start.atStartOfDay(), end.atTime(LocalTime.MAX)),
+                        timeRangeSlicer = Period.ofDays(1),
+                    )
+                ).forEach { out[it.startTime.toLocalDate().toEpochDay()] = (it.result[StepsRecord.COUNT_TOTAL] ?: 0L).toInt() }
+            }
+            start = end.plusDays(1)
+        }
+        return out
     }
 }
 
@@ -109,7 +137,7 @@ class HealthRationaleActivity : ComponentActivity() {
                     Text("Passi e Mithril", style = T.screenTitle, color = M.c.ink)
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Mithril legge solo il numero di passi da Health Connect per mostrarti i passi di oggi e la media della settimana nella revisione. " +
+                        "Mithril legge solo il numero di passi da Health Connect per mostrarti i passi di oggi, la media della settimana nella revisione e lo storico nelle statistiche. " +
                             "I dati restano sul telefono: l'app non ha server e non li invia a nessuno. Puoi revocare il permesso quando vuoi dalle impostazioni di Health Connect.",
                         style = T.body, color = M.c.ink2,
                     )

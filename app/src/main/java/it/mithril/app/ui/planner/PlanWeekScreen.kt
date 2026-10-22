@@ -92,6 +92,7 @@ import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Card
 import it.mithril.app.ui.components.GrowBar
 import it.mithril.app.ui.components.LocalToast
+import it.mithril.app.ui.components.NumberBadge
 import it.mithril.app.ui.components.OutlineButton
 import it.mithril.app.ui.components.PrimaryButton
 import it.mithril.app.ui.components.ReviewDays
@@ -145,13 +146,13 @@ fun PlanWeekScreen(start: LocalDate) {
         loaded = true
     }
 
-    fun assign(day: Int, id: Long) {
+    /** Aggiunge il video al giorno; con [toggle] lo toglie se c'è già. Il video resta selezionato per gli altri giorni. */
+    fun assign(day: Int, id: Long, toggle: Boolean = false) {
         if (day < firstEditable) { toast.show("Questo giorno è già passato"); return }
         val p = plan[day] ?: return
-        if (id in p.videos) return
+        if (id in p.videos) { if (toggle) plan[day] = p.copy(videos = p.videos - id); return }
         if (p.videos.size >= 3) { toast.show("Massimo 3 video per giorno"); return }
         plan[day] = p.copy(videos = p.videos + id)
-        selected = null
     }
     val count = plan.count { it.key >= firstEditable && it.value.videos.isNotEmpty() } + (0 until firstEditable).count { i -> slots.any { it.date == start.plusDays(i.toLong()).toEpochDay() } }
 
@@ -191,7 +192,8 @@ fun PlanWeekScreen(start: LocalDate) {
                             Text("Metti i video sui giorni", style = T.screenTitle, color = M.c.ink)
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                if (selected != null) "Ora tocca un giorno" else "Trascina un video su un giorno, oppure toccalo e poi tocca il giorno.",
+                                if (selected != null) "Tocca tutti i giorni in cui farlo, poi passa al prossimo video."
+                                else "Tocca un video e poi i giorni in cui farlo. Puoi anche trascinarlo su un giorno.",
                                 style = T.body, color = M.c.ink2,
                             )
                             Spacer(Modifier.height(16.dp))
@@ -199,6 +201,7 @@ fun PlanWeekScreen(start: LocalDate) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 all.forEach { v ->
                                     val sel = selected == v.id
+                                    val placed = (firstEditable..6).count { plan[it]?.videos?.contains(v.id) == true }
                                     val bg by animateColorAsState(if (sel) M.c.accentSoft else M.c.surface, tween(250), label = "vchip")
                                     Row(
                                         Modifier
@@ -227,7 +230,8 @@ fun PlanWeekScreen(start: LocalDate) {
                                     ) {
                                         Symbol("drag_indicator", 16.dp, (if (sel) M.c.accentInk else M.c.ink).copy(alpha = 0.5f))
                                         Spacer(Modifier.width(4.dp))
-                                        Text(v.title, style = T.button15.copy(fontSize = 14.sp), color = if (sel) M.c.accentInk else M.c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(v.title, style = T.button15.copy(fontSize = 14.sp), color = if (sel) M.c.accentInk else M.c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                        if (placed > 0) { Spacer(Modifier.width(6.dp)); NumberBadge(placed, bg = if (sel) M.c.accent else M.c.accentSoft, fg = if (sel) M.c.onAccent else M.c.accentInk) }
                                     }
                                 }
                             }
@@ -266,7 +270,7 @@ fun PlanWeekScreen(start: LocalDate) {
                                             .clip(shape)
                                             .background(if (hoverDay == i) M.c.accentSoft else M.c.surface)
                                             .then(if (target) Modifier.dashedBorder(M.c.accent, 18.dp, 1.5.dp) else Modifier)
-                                            .clickable(enabled = selected != null && !past) { selected?.let { assign(i, it) } }
+                                            .clickable(enabled = selected != null && !past) { selected?.let { assign(i, it, toggle = true) } }
                                             .padding(horizontal = 14.dp, vertical = 12.dp)
                                     ) {
                                         Row(verticalAlignment = Alignment.Bottom) {
@@ -278,14 +282,15 @@ fun PlanWeekScreen(start: LocalDate) {
                                         else FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             ids.forEachIndexed { k, id ->
                                                 val v = all.firstOrNull { it.id == id } ?: return@forEachIndexed
+                                                val hi = !past && id == selected
                                                 Row(
-                                                    Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(M.c.accentSoft).padding(start = 12.dp, end = if (past) 12.dp else 4.dp),
+                                                    Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(if (hi) M.c.accent else M.c.accentSoft).padding(start = 12.dp, end = if (past) 12.dp else 4.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                 ) {
-                                                    Text(v.title, style = ts(13, FontWeight.SemiBold), color = M.c.accentInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
+                                                    Text(v.title, style = ts(13, FontWeight.SemiBold), color = if (hi) M.c.onAccent else M.c.accentInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
                                                     if (!past) Box(Modifier.size(24.dp).clip(RoundedCornerShape(12.dp)).clickable {
                                                         plan[i] = p!!.copy(videos = p.videos.filterIndexed { j, _ -> j != k })
-                                                    }, contentAlignment = Alignment.Center) { Symbol("close", 16.dp, M.c.accentInk) }
+                                                    }, contentAlignment = Alignment.Center) { Symbol("close", 16.dp, if (hi) M.c.onAccent else M.c.accentInk) }
                                                 }
                                             }
                                         }

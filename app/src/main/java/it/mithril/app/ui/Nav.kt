@@ -15,6 +15,7 @@ enum class Tab(val label: String, val icon: String) {
     PLANNER("Planner", "calendar_view_week"),
     LIBRARY("Libreria", "video_library"),
     WEIGHT("Peso", "monitor_weight"),
+    STATS("Statistiche", "bar_chart"),
 }
 
 /** Cosa riprodurre: una sequenza ordinata di video, legata (o no) a uno slot del planner. */
