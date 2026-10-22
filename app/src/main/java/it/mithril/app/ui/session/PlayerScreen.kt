@@ -141,9 +141,9 @@ fun PlayerScreen(req: SessionRequest) {
                 val uri = v.localUri!!
                 if (!LocalVideos.readable(context, uri)) { toast.show("File non trovato sul telefono, passo al successivo"); goNext(); return@LaunchedEffect }
                 if (casting) {
-                    val start = if (local.loadedUri == uri) local.position else 0f
+                    // Sulla TV il video riparte sempre dall'inizio: il collegamento richiede qualche secondo.
                     local.pause()
-                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, start)?.let { toast.show(it); Cast.disconnect() }
+                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, 0f)?.let { toast.show(it); Cast.disconnect() }
                 } else if (local.loadedUri == uri) {
                     if (wasCasting) local.seek(Cast.engine.position)
                     local.play()
@@ -233,7 +233,7 @@ fun PlayerScreen(req: SessionRequest) {
             Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
             if (castUi.available && current.isLocal) {
                 RoundIconButton(
-                    if (casting) "cast_connected" else "cast", { nav.sheet = SheetKind.CastPicker },
+                    if (casting) "cast_connected" else "cast", { if (!casting) local.pause(); nav.sheet = SheetKind.CastPicker },
                     size = 44.dp, iconSize = 24.dp, bg = Color.Transparent, fg = if (casting) M.c.accent else PlayerInk, contentDescription = "Trasmetti alla TV",
                 )
             } else Spacer(Modifier.width(44.dp))

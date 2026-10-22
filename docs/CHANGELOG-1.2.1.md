@@ -1,0 +1,1 @@
+- **Trasmissione alla TV**: il video ora parte dall'inizio sulla TV. Prima continuava sul telefono durante il collegamento e in TV iniziava già a 15-20 secondi. Aprendo la scelta della TV il telefono va in pausa.
