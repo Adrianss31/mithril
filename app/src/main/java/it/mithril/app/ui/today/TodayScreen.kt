@@ -332,7 +332,7 @@ private fun WeightMini(weights: List<Pair<Long, Double>>, today: LocalDate, modi
     val trend = remember(weights, today) { Trend.of(weights, today.toEpochDay()) }
     val enough = weights.size >= Trend.MIN_WEIGH_INS
     val now = if (enough) trend.at(today.toEpochDay()) else weights.lastOrNull()?.second
-    val weekly = if (enough) trend.change(today.toEpochDay(), 7) else null
+    val recent = if (enough) trend.recentChange(today.toEpochDay()) else null
     val spark = remember(trend, today) {
         if (!enough) emptyList() else (27 downTo 0).mapNotNull { trend.at(today.toEpochDay() - it).takeIf { _ -> today.toEpochDay() - it >= trend.first } }
     }
@@ -346,7 +346,9 @@ private fun WeightMini(weights: List<Pair<Long, Double>>, today: LocalDate, modi
         else Text("—", style = ts(30, FontWeight.SemiBold), color = M.c.ink3)
         Text(
             when {
-                weekly != null -> "${Fmt.signedKg(weekly)} kg/sett."
+                recent != null && recent.second == 7 -> "${Fmt.signedKg(recent.first)} kg/sett."
+                recent != null -> "${Fmt.signedKg(recent.first)} kg in ${recent.second} ${if (recent.second == 1) "giorno" else "giorni"}"
+                enough -> "Trend appena iniziato"
                 weights.isEmpty() -> "Nessuna pesata"
                 else -> "Ancora ${Trend.MIN_WEIGH_INS - weights.size} per il trend"
             },

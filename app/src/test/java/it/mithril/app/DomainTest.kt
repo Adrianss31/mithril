@@ -147,4 +147,14 @@ class DomainTest {
         assertEquals(listOf(1L to 6), s.topVideos)
         assertEquals(listOf(9000, 6000, 6000), Stats.rollingSteps(listOf(mon.toEpochDay(), mon.plusDays(1).toEpochDay(), mon.plusDays(2).toEpochDay()), steps))
     }
+
+    @Test fun recentChangeWorksOnAYoungTrend() {
+        val t = friday.toEpochDay()
+        val young = Trend.of((0..5).map { t - it to 86.0 + it * 0.3 }, t) // pesate da 5 giorni
+        assertNull(young.change(t, 7))
+        val (kg, days) = young.recentChange(t)!!
+        assertEquals(5, days); assertTrue(kg < 0)
+        assertEquals(7, Trend.of((0..20).map { t - it to 86.0 }, t).recentChange(t)!!.second)
+        assertNull(Trend.of(listOf(t to 86.0), t).recentChange(t))
+    }
 }

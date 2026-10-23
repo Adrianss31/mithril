@@ -1,0 +1,2 @@
+- **Peso in Oggi**: nella prima settimana di trend la scheda scriveva "Ancora -3 per il trend". Ora mostra di quanto è cambiato il trend da quando è iniziato, per esempio "−0,4 kg in 5 giorni". Dopo 7 giorni torna a "kg/sett.".
+- **Widget Peso piccolo**: stessa correzione, niente più "trend tra -3".

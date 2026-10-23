@@ -236,7 +236,7 @@ class WeightSmallWidget : GlanceAppWidget() {
         val t = LocalDate.now().toEpochDay()
         val enough = w.size >= Trend.MIN_WEIGH_INS
         val trend = if (enough) Trend.of(w.map { it.date to it.kg }, t) else null
-        val d = SmallWeight(w.size, trend?.at(t) ?: w.lastOrNull()?.kg, trend?.change(t, 7), w.any { it.date == t })
+        val d = SmallWeight(w.size, trend?.at(t) ?: w.lastOrNull()?.kg, trend?.recentChange(t)?.first, w.any { it.date == t })
         val disc = WidgetArt.disc()
         provideContent {
             Centered {
@@ -250,7 +250,7 @@ class WeightSmallWidget : GlanceAppWidget() {
                             val arrow = when { d.change <= -0.05 -> "south_east"; d.change >= 0.05 -> "north_east"; else -> "east" }
                             Icon(context, arrow, 14.dp, WC.accentInk, filled = false)
                             Text(Fmt.kg(abs(d.change)), style = TextStyle(color = WC.accentInk, fontSize = 11.sp, fontWeight = FontWeight.Bold))
-                        } else Text("trend tra ${Trend.MIN_WEIGH_INS - d.count}", style = TextStyle(color = WC.ink3, fontSize = 11.sp))
+                        } else if (d.count < Trend.MIN_WEIGH_INS) Text("trend tra ${Trend.MIN_WEIGH_INS - d.count}", style = TextStyle(color = WC.ink3, fontSize = 11.sp))
                     }
                     if (d.weighedToday) Box(GlanceModifier.fillMaxSize().padding(5.dp), contentAlignment = Alignment.TopEnd) {
                         Box(GlanceModifier.size(18.dp), contentAlignment = Alignment.Center) {

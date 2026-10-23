@@ -19,8 +19,8 @@ android {
         applicationId = "it.mithril.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.3.0"
+        versionCode = 7
+        versionName = "1.3.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/Adrianss31/mithril/releases/latest/download/update.json\"")
         buildConfigField("String", "UPDATE_PUBLIC_KEY", "\"$updateKey\"")

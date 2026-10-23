@@ -29,6 +29,15 @@ class Trend private constructor(
         return now - before
     }
 
+    /** Variazione del trend negli ultimi [days] giorni, o da quando è iniziato se è più giovane: (kg, giorni). */
+    fun recentChange(today: Long, days: Int = 7): Pair<Double, Int>? {
+        val span = minOf(days.toLong(), today - first).toInt()
+        if (span < 1) return null
+        val now = at(today) ?: return null
+        val before = at(today - span) ?: return null
+        return (now - before) to span
+    }
+
     /** Variazione giornaliera media del trend (negativa = cala), sulle ultime due settimane se possibile. */
     fun dailySlope(today: Long): Double? {
         val span = if (today - 14 >= first) 14 else if (today - 7 >= first) 7 else return null
