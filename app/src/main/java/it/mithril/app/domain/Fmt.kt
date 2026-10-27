@@ -42,6 +42,8 @@ object Fmt {
     fun dayLong(date: LocalDate): String = "${dayName(date.dayOfWeek)} ${date.dayOfMonth} ${month(date)}"
     /** "16 ott" */
     fun dateShort(date: LocalDate): String = "${date.dayOfMonth} ${monthShort(date)}"
+    /** "16 ott", con l'anno se non è quello di [today]: "16 ott 2027" */
+    fun dateShort(date: LocalDate, today: LocalDate): String = if (date.year == today.year) dateShort(date) else "${dateShort(date)} ${date.year}"
 
     /** "12 – 18 ottobre" oppure "29 settembre – 5 ottobre" */
     fun weekRange(start: LocalDate): String {
@@ -60,14 +62,14 @@ object Fmt {
         return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
     }
 
-    /** "inizio/metà/fine gennaio" */
-    fun eta(date: LocalDate): String {
+    /** "inizio/metà/fine gennaio", con l'anno se non è quello di [today]: "metà novembre 2027" */
+    fun eta(date: LocalDate, today: LocalDate = LocalDate.now()): String {
         val part = when {
             date.dayOfMonth <= 10 -> "inizio"
             date.dayOfMonth <= 20 -> "metà"
             else -> "fine"
         }
-        return "$part ${month(date)}"
+        return if (date.year == today.year) "$part ${month(date)}" else "$part ${month(date)} ${date.year}"
     }
 
     fun overlineFor(min: Int): String = when {

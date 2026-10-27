@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
                 Reminders.cancelSessionNotification(this)
                 val slot = repo.dao.slot(i.getLongExtra(EXTRA_SLOT, -1)) ?: return
                 nav.popToRoot(); nav.sheet = null; nav.select(Tab.TODAY)
-                nav.startSlot(slot, i.action == START_MINI, repo.videos.value ?: emptyList())
+                nav.startSlot(slot, i.action == START_MINI, repo.videos.value ?: emptyList(), i.getBooleanExtra(EXTRA_CAST, false))
             }
             OPEN_TODAY -> { nav.popToRoot(); nav.select(Tab.TODAY) }
             OPEN_PLANNER -> { nav.popToRoot(); nav.select(Tab.PLANNER) }
@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity() {
         const val WEIGH = "it.mithril.app.WEIGH"
         const val OPEN_GOAL = "it.mithril.app.OPEN_GOAL"
         const val EXTRA_SLOT = "slot"
+        const val EXTRA_CAST = "cast"
 
         fun intent(context: Context, action: String, slotId: Long?, req: Int): PendingIntent {
             val i = Intent(context, MainActivity::class.java).setAction(action)

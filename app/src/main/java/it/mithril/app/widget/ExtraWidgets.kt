@@ -59,8 +59,9 @@ import kotlin.math.ceil
 
 private val SMALL = 78.dp
 
-private fun open(context: Context, action: String, slot: Long? = null): Action =
+private fun open(context: Context, action: String, slot: Long? = null, cast: Boolean = false): Action =
     actionStartActivity(Intent(context, MainActivity::class.java).setAction(action).apply { if (slot != null) putExtra(MainActivity.EXTRA_SLOT, slot) }
+        .apply { if (cast) putExtra(MainActivity.EXTRA_CAST, true) }
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
 
 private fun quickWeigh(context: Context): Action =
@@ -178,7 +179,7 @@ class FirstVideoWidget : GlanceAppWidget() {
             Centered {
                 when (d) {
                     is FirstVideo.Next -> Box(
-                        GlanceModifier.size(SMALL).cornerRadius(24.dp).background(WC.surface2).clickable(open(context, MainActivity.START, d.slot.id)),
+                        GlanceModifier.size(SMALL).cornerRadius(24.dp).background(WC.surface2).clickable(open(context, MainActivity.START, d.slot.id, cast = true)),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (d.thumb != null) Image(ImageProvider(d.thumb), null, GlanceModifier.fillMaxSize(), contentScale = ContentScale.Crop)

@@ -42,6 +42,15 @@ import it.mithril.app.ui.theme.rise
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import it.mithril.app.BuildConfig
+import it.mithril.app.cast.Cast
+import it.mithril.app.ui.components.Symbol
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.draw.clip
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Trend
 import it.mithril.app.health.Health
@@ -158,7 +167,8 @@ fun SettingsScreen() {
                     TonalButton("Consenti le notifiche", { notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }, height = 44.dp)
                 }
             }
-            Section("Aggiornamenti", 3) {
+            Section("Trasmissione alla TV", 3) { CastDefault(settings.castDeviceId, settings.castDeviceName) }
+            Section("Aggiornamenti", 4) {
                 Text("Mithril ${BuildConfig.VERSION_NAME}", style = T.title15, color = M.c.ink)
                 Spacer(Modifier.height(4.dp))
                 when (val u = update) {
@@ -190,7 +200,7 @@ fun SettingsScreen() {
                     else -> TonalButton("Cerca aggiornamenti", { scope.launch { Updates.check(context) } }, icon = "sync", height = 44.dp)
                 }
             }
-            Section("Privacy", 4) {
+            Section("Privacy", 5) {
                 Text("Tutto resta sul telefono: niente account, niente server. Internet serve solo per i video di YouTube e per controllare gli aggiornamenti.", style = T.body14, color = M.c.ink2)
             }
         }
@@ -202,6 +212,68 @@ private fun Section(title: String, index: Int, content: @Composable ColumnScope.
     Column(Modifier.rise(index)) {
         Overline(title, Modifier.padding(start = 8.dp, bottom = 8.dp))
         Card(Modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(16.dp), content = content)
+    }
+}
+
+/** TV predefinita: il widget "Primo video" ci fa partire la sessione senza passare dal telefono. */
+@Composable
+private fun ColumnScope.CastDefault(savedId: String?, savedName: String?) {
+    val repo = rememberRepo()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val ui by Cast.state.collectAsStateWithLifecycle()
+    var picking by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { Cast.init(context) }
+    if (picking) DisposableEffect(Unit) {
+        Cast.startDiscovery()
+        onDispose { Cast.stopDiscovery() }
+    }
+    Text("TV predefinita", style = T.title15, color = M.c.ink)
+    Text(
+        "Toccando il widget \"Primo video\" la sessione parte direttamente su questa TV. Vale per i video del telefono: quelli di YouTube restano sul telefono.",
+        style = T.secondary, color = M.c.ink2,
+    )
+    Spacer(Modifier.height(10.dp))
+    if (!ui.available) {
+        Text("Google Cast non è disponibile su questo telefono.", style = T.body14, color = M.c.ink2)
+        return
+    }
+    if (savedName != null) DeviceRow(savedName, "Predefinita", selected = true, onClick = null)
+    if (!picking) {
+        Row(Modifier.padding(top = 6.dp)) {
+            TextLink(if (savedName == null) "Scegli la TV" else "Cambia TV", { picking = true })
+            Spacer(Modifier.weight(1f))
+            if (savedName != null) TextLink("Nessuna", { scope.launch { repo.settings.setCastDevice(null, null) } }, color = M.c.ink2)
+        }
+        return
+    }
+    Divider(Modifier.fillMaxWidth())
+    val others = ui.devices.filter { it.id != savedId }
+    if (others.isEmpty()) Text("Cerco TV sulla rete Wi-Fi…", style = T.secondary, color = M.c.ink3, modifier = Modifier.padding(vertical = 14.dp))
+    others.forEach { d ->
+        DeviceRow(d.name, d.description, selected = false) {
+            scope.launch { repo.settings.setCastDevice(d.id, d.name) }
+            picking = false
+        }
+    }
+    TextLink("Annulla", { picking = false }, Modifier.padding(top = 6.dp), color = M.c.ink2)
+}
+
+@Composable
+private fun DeviceRow(name: String, description: String?, selected: Boolean, onClick: (() -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(if (selected) M.c.accentSoft else M.c.surface2), contentAlignment = Alignment.Center) {
+            Symbol("tv", 22.dp, if (selected) M.c.accentInk else M.c.ink)
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = T.title15, color = M.c.ink)
+            description?.takeIf { it.isNotBlank() }?.let { Text(it, style = T.secondary, color = M.c.ink2) }
+        }
+        if (selected) Symbol("check", 22.dp, M.c.accent)
     }
 }
 

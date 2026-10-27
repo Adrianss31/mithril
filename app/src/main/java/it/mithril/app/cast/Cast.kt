@@ -26,6 +26,9 @@ import it.mithril.app.ui.session.MediaEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Ricevitore multimediale predefinito di Google: ce l'hanno Google TV e Chromecast, nessuna registrazione necessaria. */
 class CastOptionsProvider : OptionsProvider {
@@ -103,6 +106,25 @@ object Cast {
         val route = router?.routes?.firstOrNull { it.id == id } ?: return
         _state.value = _state.value.copy(connecting = true)
         router?.selectRoute(route)
+    }
+
+    /**
+     * Collega da sola la TV scelta nelle impostazioni (cercata per id, poi per nome).
+     * Restituisce il nome della TV collegata, o null se non si trova o non risponde in tempo.
+     */
+    suspend fun autoConnect(id: String, name: String): String? {
+        _state.value.connectedTo?.let { return it }
+        if (router == null) return null
+        startDiscovery()
+        try {
+            val device = withTimeoutOrNull(12_000) {
+                state.mapNotNull { s -> s.devices.firstOrNull { it.id == id } ?: s.devices.firstOrNull { it.name == name } }.first()
+            } ?: return null
+            connect(device.id)
+            return withTimeoutOrNull(25_000) { state.first { it.connectedTo != null || !it.connecting } }?.connectedTo
+        } finally {
+            stopDiscovery()
+        }
     }
 
     fun disconnect() {
@@ -186,5 +208,7 @@ class CastEngine : MediaEngine {
 
     override fun play() { client?.play() }
     override fun pause() { client?.pause() }
+    /** Ferma il video sulla TV restando collegati (il prossimo video del telefono ci torna). */
+    fun stop() { client?.stop() }
     override fun seek(sec: Float) { client?.seek(MediaSeekOptions.Builder().setPosition((sec * 1000).toLong()).build()) }
 }

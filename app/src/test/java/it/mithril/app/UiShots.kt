@@ -209,3 +209,25 @@ class PlanWeekPickShot : ShotBase() {
         }) { it.push(Dest.PlanWeek(Week.start(LocalDate.now()).plusWeeks(1))) }
     }
 }
+
+// Come nella prima settimana reale: pochi giorni di pesate e obiettivo lontano.
+class WeightYoungShot : ShotBase() {
+    @Test fun weightYoung() {
+        seed()
+        val repo = Repo.get(ApplicationProvider.getApplicationContext<Application>())
+        runBlocking {
+            val today = LocalDate.now()
+            repo.dao.weightsNow().forEach { repo.dao.deleteWeight(it.date) }
+            listOf(86.9, 86.7, 86.8, 86.5, 86.3, 86.3, 86.4, 85.7).forEachIndexed { i, kg ->
+                repo.dao.upsertWeight(WeightEntity(today.minusDays(7L - i).toEpochDay(), kg))
+            }
+            repo.settings.setGoal(71.8, 86.9, today.minusDays(7).toEpochDay())
+            repeat(100) { if (repo.weights.value?.size == 8) return@runBlocking; Thread.sleep(50) }
+        }
+        shot("04c_peso_prima_settimana") { it.select(Tab.WEIGHT) }
+    }
+}
+
+class SettingsShot : ShotBase() {
+    @Test fun settings() { seed(); shot("14_impostazioni") { it.push(Dest.Settings) } }
+}

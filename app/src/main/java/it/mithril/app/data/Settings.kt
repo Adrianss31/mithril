@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -24,6 +25,9 @@ data class AppSettings(
     val reviewReminderMin: Int = 20 * 60,
     val healthAsked: Boolean = false,
     val lastUpdateCheck: Long = 0,
+    /** TV su cui il widget "Primo video" fa partire la sessione: id della rotta e nome per ritrovarla. */
+    val castDeviceId: String? = null,
+    val castDeviceName: String? = null,
 )
 
 private val Context.store: DataStore<Preferences> by preferencesDataStore("mithril_settings")
@@ -40,6 +44,8 @@ class SettingsRepo(private val context: Context) {
         val reviewMin = intPreferencesKey("review_reminder_min")
         val healthAsked = booleanPreferencesKey("health_asked")
         val lastUpdate = longPreferencesKey("last_update_check")
+        val castId = stringPreferencesKey("cast_device_id")
+        val castName = stringPreferencesKey("cast_device_name")
     }
 
     val flow: Flow<AppSettings> = context.store.data.map { p ->
@@ -54,6 +60,8 @@ class SettingsRepo(private val context: Context) {
             reviewReminderMin = p[K.reviewMin] ?: (20 * 60),
             healthAsked = p[K.healthAsked] ?: false,
             lastUpdateCheck = p[K.lastUpdate] ?: 0,
+            castDeviceId = p[K.castId],
+            castDeviceName = p[K.castName],
         )
     }
 
@@ -74,6 +82,9 @@ class SettingsRepo(private val context: Context) {
     suspend fun setReviewReminder(on: Boolean) = context.store.edit { it[K.review] = on }
     suspend fun setHealthAsked() = context.store.edit { it[K.healthAsked] = true }
     suspend fun setLastUpdateCheck(t: Long) = context.store.edit { it[K.lastUpdate] = t }
+    suspend fun setCastDevice(id: String?, name: String?) = context.store.edit { p ->
+        if (id == null || name == null) { p.remove(K.castId); p.remove(K.castName) } else { p[K.castId] = id; p[K.castName] = name }
+    }
     /** Se l'obiettivo non ha ancora un peso di partenza, lo fissa alla prima occasione utile. */
     suspend fun fillGoalStart(kg: Double) = context.store.edit { if (it[K.goalKg] != null && it[K.startKg] == null) it[K.startKg] = kg }
 }

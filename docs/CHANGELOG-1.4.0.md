@@ -1,0 +1,5 @@
+- **Dal widget alla TV**: in Impostazioni → Trasmissione alla TV scegli la TV predefinita. Quando tocchi il widget "Primo video", Mithril si collega da solo a quella TV e la sessione parte lì, dal punto in cui l'avevi lasciata. Vale per i video del telefono: quelli di YouTube continuano sul telefono. Se la TV non risponde, il video parte sul telefono.
+- **Grafico del peso con oggi al centro**: a sinistra il periodo scelto, a destra la proiezione per altrettanti giorni (3M = 3 mesi indietro e 3 mesi avanti). In fondo alla linea tratteggiata c'è il peso previsto, e sotto il grafico una frase spiega su quale ritmo si basa la proiezione, fino a quando arriva e quale peso prevede.
+- **Scala del grafico più leggibile**: se l'obiettivo è lontano non schiaccia più il trend in una riga. Al suo posto, sul bordo del grafico, compare l'indicazione "obiettivo ↓".
+- **Data dell'obiettivo con l'anno**: "Con questo trend" ora scrive l'anno quando non è quello in corso, per esempio "metà novembre 2027". Prima mostrava solo "metà novembre" e sembrava che mancassero poche settimane.
+- **Statistiche**: il grafico del peso mostra solo il periodo passato, senza proiezione.
