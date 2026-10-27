@@ -27,11 +27,11 @@ fun statusBarTop(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopP
 fun screenPadding(horizontal: Dp = 16.dp, top: Dp = 8.dp): PaddingValues =
     PaddingValues(start = horizontal, end = horizontal, top = statusBarTop() + top, bottom = BottomGap)
 
-fun Navigator.startSlot(slot: SlotEntity, mini: Boolean, all: List<VideoEntity>) {
-    val req = if (!mini) SessionRequest(slot.id, slot.videoIdList, false)
+fun Navigator.startSlot(slot: SlotEntity, mini: Boolean, all: List<VideoEntity>, autoCast: Boolean = false) {
+    val req = if (!mini) SessionRequest(slot.id, slot.videoIdList, false, autoCast = autoCast)
     else {
-        val m = Sessions.miniFor(Sessions.videosOf(slot.videoIdList, all), all) ?: return startSlot(slot, false, all)
-        SessionRequest(slot.id, listOf(m.id), true, "Versione mini")
+        val m = Sessions.miniFor(Sessions.videosOf(slot.videoIdList, all), all) ?: return startSlot(slot, false, all, autoCast)
+        SessionRequest(slot.id, listOf(m.id), true, "Versione mini", autoCast)
     }
     push(Dest.Player(req))
 }

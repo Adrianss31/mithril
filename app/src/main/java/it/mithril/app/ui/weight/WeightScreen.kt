@@ -145,9 +145,23 @@ private fun TrendCard(trend: Trend, today: LocalDate, range: Range, goalKg: Doub
         Spacer(Modifier.height(14.dp))
         Segmented(range, onRange)
         Spacer(Modifier.height(16.dp))
-        WeightChart(trend, today, range, goalKg, trend.dailySlope(t), Modifier.fillMaxWidth().height(190.dp))
+        WeightChart(trend, today, range, goalKg, Modifier.fillMaxWidth().height(190.dp))
         Spacer(Modifier.height(12.dp))
         Legend()
+        Spacer(Modifier.height(10.dp))
+        Text(projectionNote(trend, today, range, goalKg), style = T.secondary, color = M.c.ink2)
+    }
+}
+
+/** La proiezione a parole: su quale ritmo si basa, fino a quando arriva e quale peso prevede. */
+private fun projectionNote(trend: Trend, today: LocalDate, range: Range, goalKg: Double?): String {
+    val p = trend.projection(today.toEpochDay(), range.days, goalKg) ?: return "La proiezione compare dopo una settimana di trend."
+    val basis = if (p.basisDays >= 14) "delle ultime 2 settimane" else "dell'ultima settimana"
+    val day = Fmt.dateShort(today.plusDays(p.days.toLong()), today)
+    return when {
+        p.stable -> "Trend stabile nel corso $basis: se resta così, il $day sarai ancora a ${Fmt.kg(p.endKg)} kg."
+        p.reachesGoal -> "Al ritmo $basis (${Fmt.signedKg(p.slopePerDay * 7)} kg a settimana) arrivi all'obiettivo di ${Fmt.kg(p.endKg)} kg verso il $day."
+        else -> "Al ritmo $basis (${Fmt.signedKg(p.slopePerDay * 7)} kg a settimana), il $day saresti a ${Fmt.kg(p.endKg)} kg."
     }
 }
 

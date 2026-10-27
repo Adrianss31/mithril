@@ -24,6 +24,8 @@ data class SessionRequest(
     val videoIds: List<Long>,
     val mini: Boolean,
     val label: String = "Sessione di stasera",
+    /** Avviata dal widget "Primo video": i video del telefono vanno subito sulla TV predefinita. */
+    val autoCast: Boolean = false,
 )
 
 sealed interface Dest {

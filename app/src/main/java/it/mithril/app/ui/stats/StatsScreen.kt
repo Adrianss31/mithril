@@ -161,7 +161,7 @@ fun StatsScreen() {
                     CardHeader("Peso", s.trendChange?.let { "trend ${Fmt.signedKg(it)} kg nel periodo" })
                     Spacer(Modifier.height(14.dp))
                     val range = when (period) { StatsPeriod.W4 -> Range.M1; StatsPeriod.M3 -> Range.M3; else -> Range.Y1 }
-                    WeightChart(trend, today, range, settings.goalKg, trend.dailySlope(today.toEpochDay()), Modifier.fillMaxWidth().height(170.dp))
+                    WeightChart(trend, today, range, settings.goalKg, Modifier.fillMaxWidth().height(170.dp), forecast = false)
                     Spacer(Modifier.height(10.dp))
                     TextLink("Dettagli nella scheda Peso", { nav.select(Tab.WEIGHT) })
                 }

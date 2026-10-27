@@ -39,16 +39,37 @@ class Trend private constructor(
     }
 
     /** Variazione giornaliera media del trend (negativa = cala), sulle ultime due settimane se possibile. */
-    fun dailySlope(today: Long): Double? {
-        val span = if (today - 14 >= first) 14 else if (today - 7 >= first) 7 else return null
+    fun dailySlope(today: Long): Double? = slopeSpan(today)?.let { span -> (at(today)!! - at(today - span)!!) / span }
+
+    /** Giorni su cui si misura la pendenza: 14, 7 se il trend è più giovane, null prima di una settimana. */
+    fun slopeSpan(today: Long): Int? = when {
+        values.isEmpty() || today < first -> null
+        today - 14 >= first -> 14
+        today - 7 >= first -> 7
+        else -> null
+    }
+
+    /**
+     * Dove porta il trend se continua al ritmo di [dailySlope] per [horizon] giorni.
+     * Si ferma prima se arriva all'obiettivo; con un ritmo quasi nullo resta piatta.
+     */
+    fun projection(today: Long, horizon: Int, goalKg: Double?): Projection? {
         val now = at(today) ?: return null
-        val before = at(today - span) ?: return null
-        return (now - before) / span
+        val slope = dailySlope(today) ?: return null
+        val span = slopeSpan(today) ?: return null
+        if (abs(slope) <= STABLE_SLOPE) return Projection(horizon, now, slope, span, reachesGoal = false)
+        if (goalKg != null && (goalKg - now) * slope > 0) {
+            val toGoal = ceil((goalKg - now) / slope).toInt()
+            if (toGoal <= horizon) return Projection(toGoal, goalKg, slope, span, reachesGoal = true)
+        }
+        return Projection(horizon, now + slope * horizon, slope, span, reachesGoal = false)
     }
 
     companion object {
         const val ALPHA = 0.1
         const val MIN_WEIGH_INS = 3
+        /** Sotto questa variazione giornaliera (kg) il trend è considerato stabile. */
+        const val STABLE_SLOPE = 0.002
 
         fun of(weights: List<Pair<Long, Double>>, today: Long): Trend {
             val sorted = weights.sortedBy { it.first }
@@ -77,6 +98,11 @@ class Trend private constructor(
     }
 }
 
+/** Proiezione del trend: tra [days] giorni [endKg], al ritmo [slopePerDay] misurato sugli ultimi [basisDays] giorni. */
+data class Projection(val days: Int, val endKg: Double, val slopePerDay: Double, val basisDays: Int, val reachesGoal: Boolean) {
+    val stable: Boolean get() = abs(slopePerDay) <= Trend.STABLE_SLOPE
+}
+
 /** Obiettivo di peso e stato rispetto al piano. */
 data class GoalStatus(
     val onTrack: Boolean,
@@ -100,7 +126,7 @@ object Goal {
         val towards = slope?.let { it * dir } ?: 0.0 // kg/giorno verso l'obiettivo
         val weekly = trend.change(t, 7)?.let { it * dir } ?: (towards * 7)
         val onTrack = remaining <= 0 || weekly >= weeklyRate - 1e-9
-        val stable = towards <= 0.002
+        val stable = towards <= Trend.STABLE_SLOPE
         val eta = if (remaining > 0 && !stable) today.plusDays(ceil(remaining / towards).toLong().coerceAtMost(3650)) else null
         val start = startKg ?: now
         val total = abs(targetKg - start)

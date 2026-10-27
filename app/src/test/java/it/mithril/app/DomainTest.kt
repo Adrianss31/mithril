@@ -39,7 +39,8 @@ class DomainTest {
         assertEquals("Venerdì 16", Fmt.dayTitle(friday))
         assertEquals("12 – 18 ottobre", Fmt.weekRange(LocalDate.of(2026, 10, 12)))
         assertEquals("28 settembre – 4 ottobre", Fmt.weekRange(LocalDate.of(2026, 9, 28)))
-        assertEquals("metà gennaio", Fmt.eta(LocalDate.of(2027, 1, 15)))
+        assertEquals("metà gennaio", Fmt.eta(LocalDate.of(2027, 1, 15), LocalDate.of(2027, 1, 2)))
+        assertEquals("metà novembre 2027", Fmt.eta(LocalDate.of(2027, 11, 15), friday))
         assertEquals("25:12", Fmt.clock(25 * 60 + 12))
         assertEquals("25'", Fmt.minutes(25 * 60 + 12))
     }
@@ -66,6 +67,28 @@ class DomainTest {
         val flat = Trend.of((0..30).map { (today - 30 + it) to 85.0 }, today)
         val f = Goal.status(flat, friday, 82.0, 0.25, 85.0)!!
         assertTrue(f.stable); assertNull(f.eta); assertFalse(f.onTrack)
+    }
+
+    @Test fun projectionStopsAtGoalOrHorizon() {
+        val today = friday.toEpochDay()
+        // −0,06 kg al giorno: 3 kg in 50 giorni.
+        val trend = Trend.of((0..60).map { (today - 60 + it) to 90.0 - it * 0.06 }, today)
+        val now = trend.at(today)!!
+        val far = trend.projection(today, 30, 70.0)!!
+        assertEquals(30, far.days)
+        assertFalse(far.reachesGoal)
+        assertEquals(14, far.basisDays)
+        assertEquals(now + far.slopePerDay * 30, far.endKg, 1e-9)
+        val near = trend.projection(today, 91, now - 1.0)!!
+        assertTrue(near.reachesGoal)
+        assertTrue(near.days in 1..91)
+        assertEquals(now - 1.0, near.endKg, 1e-9)
+        // Obiettivo nella direzione opposta: si proietta fino all'orizzonte.
+        assertFalse(trend.projection(today, 91, 95.0)!!.reachesGoal)
+        val flat = Trend.of((0..30).map { (today - 30 + it) to 85.0 }, today).projection(today, 91, 80.0)!!
+        assertTrue(flat.stable); assertEquals(85.0, flat.endKg, 1e-9)
+        // Meno di una settimana di trend: niente proiezione.
+        assertNull(Trend.of((0..4).map { (today - 4 + it) to 85.0 }, today).projection(today, 91, 80.0))
     }
 
     @Test fun dayStatesAndStreak() {

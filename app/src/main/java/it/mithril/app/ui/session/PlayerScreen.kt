@@ -82,6 +82,9 @@ import it.mithril.app.widget.Widgets
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Symbol
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.runtime.snapshotFlow
 
 @Composable
 fun PlayerScreen(req: SessionRequest) {
@@ -108,8 +111,27 @@ fun PlayerScreen(req: SessionRequest) {
     val yt = remember { YouTubePlayerState() }
     var web by remember { mutableStateOf<WebView?>(null) }
     val local = remember { LocalEngine(context) }
-    LaunchedEffect(Unit) { Cast.init(context) }
     val castUi by Cast.state.collectAsStateWithLifecycle()
+    // Avvio dal widget: prima si collega la TV predefinita, poi parte il primo video del telefono.
+    var autoCasting by remember { mutableStateOf(req.autoCast) }
+    var autoCastName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        Cast.init(context)
+        if (!autoCasting) return@LaunchedEffect
+        val s = repo.settings.now()
+        val id = s.castDeviceId
+        val name = s.castDeviceName
+        when {
+            id == null || name == null || !Cast.state.value.available -> {}
+            videos.none { it.isLocal } -> toast.show("I video di YouTube si guardano sul telefono: in TV vanno solo quelli del telefono")
+            else -> {
+                autoCastName = name
+                if (Cast.autoConnect(id, name) == null) toast.show("$name non risponde: il video parte sul telefono")
+                else withTimeoutOrNull(2_000) { snapshotFlow { castUi.connectedTo }.first { it != null } }
+            }
+        }
+        autoCasting = false
+    }
     val current = videos[index]
     val casting = castUi.connectedTo != null && current.isLocal
     val engine: MediaEngine = when { casting -> Cast.engine; current.isLocal -> local; else -> yt }
@@ -133,17 +155,19 @@ fun PlayerScreen(req: SessionRequest) {
 
     // Carica il video corrente nel motore giusto: cambio video, inizio o fine della trasmissione.
     var wasCasting by remember { mutableStateOf(false) }
-    LaunchedEffect(index, casting) {
+    LaunchedEffect(index, casting, autoCasting) {
         val v = current
+        if (autoCasting && v.isLocal) return@LaunchedEffect
         when {
             v.isLocal -> {
                 yt.pause()
                 val uri = v.localUri!!
                 if (!LocalVideos.readable(context, uri)) { toast.show("File non trovato sul telefono, passo al successivo"); goNext(); return@LaunchedEffect }
                 if (casting) {
-                    // Sulla TV il video riparte sempre dall'inizio: il collegamento richiede qualche secondo.
+                    // Collegata a video iniziato la TV riparte dall'inizio (il collegamento richiede qualche secondo);
+                    // collegata dal widget prima di partire, riprende la sessione da dove era rimasta.
                     local.pause()
-                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, 0f)?.let { toast.show(it); Cast.disconnect() }
+                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, startAt)?.let { toast.show(it); Cast.disconnect() }
                 } else if (local.loadedUri == uri) {
                     if (wasCasting) local.seek(Cast.engine.position)
                     local.play()
@@ -152,7 +176,7 @@ fun PlayerScreen(req: SessionRequest) {
             v.embeddable == false -> leave(Dest.External(req, v.id))
             else -> {
                 local.pause()
-                if (wasCasting) Cast.disconnect()
+                if (wasCasting) Cast.engine.stop()
                 if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt, startAt) else yt.load(v.youtubeId, startAt)
             }
         }
@@ -240,10 +264,13 @@ fun PlayerScreen(req: SessionRequest) {
         }
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {
             if (current.isLocal) {
-                if (casting) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (casting || (autoCasting && autoCastName != null)) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Symbol("tv", 44.dp, PlayerInk.copy(alpha = 0.8f))
                     Spacer(Modifier.height(8.dp))
-                    Text("In riproduzione su ${castUi.connectedTo}", style = T.body14, color = PlayerInk.copy(alpha = 0.8f))
+                    Text(
+                        if (casting) "In riproduzione su ${castUi.connectedTo}" else "Mi collego a ${autoCastName ?: "TV"}…",
+                        style = T.body14, color = PlayerInk.copy(alpha = 0.8f),
+                    )
                 } else AndroidView(
                     factory = { TextureView(it) },
                     update = { local.exo.setVideoTextureView(it) },
