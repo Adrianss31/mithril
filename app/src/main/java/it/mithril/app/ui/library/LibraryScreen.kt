@@ -170,7 +170,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
 fun VideoCard(v: VideoEntity, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(12.dp), onClick = onClick) {
         Row {
-            Thumb(v.thumbnailUrl, 116.dp, 66.dp, radius = 14.dp, duration = Fmt.clock(v.durationSec))
+            Thumb(v.thumbnailUrl, 116.dp, 66.dp, radius = 14.dp, duration = Fmt.clock(v.playSec))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(v.title, style = T.title15, color = M.c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)

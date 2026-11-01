@@ -8,9 +8,11 @@ import it.mithril.app.data.YouTube
 import it.mithril.app.domain.DayState
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
+import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Stats
 import it.mithril.app.domain.StatsPeriod
 import it.mithril.app.domain.TimeSuggest
+import it.mithril.app.domain.Trim
 import it.mithril.app.widget.formatSteps
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
@@ -156,5 +158,32 @@ class DomainTest {
         assertEquals(5, days); assertTrue(kg < 0)
         assertEquals(7, Trend.of((0..20).map { t - it to 86.0 }, t).recentChange(t)!!.second)
         assertNull(Trend.of(listOf(t to 86.0), t).recentChange(t))
+    }
+
+    @Test fun trimParsesTimesAndChecksLimits() {
+        assertEquals(90, Trim.parse("1:30"))
+        assertEquals(90, Trim.parse("1.30"))
+        assertEquals(45, Trim.parse("45"))
+        assertEquals(3750, Trim.parse("1:02:30"))
+        assertNull(Trim.parse(""))
+        assertNull(Trim.parse("1:75"))
+        assertNull(Trim.parse("a:10"))
+        assertNull(Trim.error(45, 1470, "0:45", "24:30", 1512))
+        assertNull(Trim.error(null, null, "", "", null))
+        assertNotNull(Trim.error(null, null, "x", "", 1512))
+        assertNotNull(Trim.error(1600, null, "26:40", "", 1512))
+        assertNotNull(Trim.error(0, 1600, "", "26:40", 1512))
+        assertNotNull(Trim.error(100, 110, "1:40", "1:50", 1512))
+        assertNull(Trim.end(1512, 1512))
+        assertEquals(1470, Trim.end(1470, 1512))
+    }
+
+    @Test fun playSecLeavesOutIntroAndOutro() {
+        val v = VideoEntity(1, "x", "t", "c", 1512, "", "", startSec = 45, endSec = 1470)
+        assertEquals(1425, v.playSec)
+        assertEquals(1467, v.copy(endSec = null).playSec)
+        assertNull(v.copy(durationSec = null, endSec = null).playSec)
+        assertEquals(1425, v.copy(durationSec = null).playSec) // la fine basta anche senza durata
+        assertEquals(1425 + 1467, Sessions.totalSec(listOf(v, v.copy(endSec = null))))
     }
 }

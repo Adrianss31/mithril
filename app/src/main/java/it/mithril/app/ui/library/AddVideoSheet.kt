@@ -52,6 +52,7 @@ import it.mithril.app.data.VideoMeta
 import it.mithril.app.data.YouTube
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
+import it.mithril.app.domain.Trim
 import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Chip
@@ -78,10 +79,10 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
     VideoForm(
         meta = meta,
         edit = edit,
-        onSave = { title, tags, mini ->
+        onSave = { title, tags, mini, start, end ->
             scope.launch {
-                if (edit != null) repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini))
-                else repo.addVideo(meta.copy(title = title), tags, mini)
+                if (edit != null) repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini, startSec = start, endSec = end))
+                else repo.addVideo(meta.copy(title = title), tags, mini, start, end)
                 toast.show(if (edit != null) "Video aggiornato" else "Salvato in Libreria")
             }
             onDone()
@@ -104,7 +105,7 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
 fun ColumnScope.VideoForm(
     meta: VideoMeta,
     edit: VideoEntity?,
-    onSave: (title: String, tags: Set<String>, mini: Long?) -> Unit,
+    onSave: (title: String, tags: Set<String>, mini: Long?, start: Int, end: Int?) -> Unit,
     onDelete: (() -> Unit)? = null,
     onPlay: (() -> Unit)? = null,
 ) {
@@ -114,7 +115,12 @@ fun ColumnScope.VideoForm(
     val local = meta.localUri != null
     var tags by remember(meta.youtubeId) { mutableStateOf(edit?.tagList?.toSet() ?: Tags.suggest(meta.title, meta.durationSec)) }
     var mini by remember(meta.youtubeId) { mutableStateOf(edit?.miniVideoId) }
-    val minis = (videos ?: emptyList()).filter { it.youtubeId != meta.youtubeId && (it.durationSec ?: Int.MAX_VALUE) <= Sessions.MINI_MAX_SEC }
+    var startText by remember(meta.youtubeId) { mutableStateOf(edit?.startSec?.takeIf { it > 0 }?.let { Fmt.clock(it) } ?: "") }
+    var endText by remember(meta.youtubeId) { mutableStateOf(edit?.endSec?.let { Fmt.clock(it) } ?: "") }
+    val start = Trim.parse(startText)
+    val end = Trim.parse(endText)
+    val trimError = Trim.error(start, end, startText, endText, meta.durationSec)
+    val minis = (videos ?: emptyList()).filter { it.youtubeId != meta.youtubeId && (it.playSec ?: Int.MAX_VALUE) <= Sessions.MINI_MAX_SEC }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(if (edit != null) "Modifica video" else "Aggiungi video", style = T.sheetTitle, color = M.c.ink, modifier = Modifier.weight(1f))
@@ -164,6 +170,17 @@ fun ColumnScope.VideoForm(
             Tags.EDITABLE.forEach { t -> Chip(t, t in tags, { tags = if (t in tags) tags - t else tags + t }, showCheck = true) }
         }
         Spacer(Modifier.height(18.dp))
+        Overline("Salta intro e outro")
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TimeField("Parte da", startText, "0:00", Modifier.weight(1f)) { startText = it }
+            TimeField("Finisce a", endText, meta.durationSec?.let { Fmt.clock(it) } ?: "alla fine", Modifier.weight(1f)) { endText = it }
+        }
+        Text(
+            trimError ?: "Minuti e secondi, come 1:30. Puoi segnarli anche dal player, mentre guardi.",
+            style = T.caption, color = if (trimError != null) M.c.accentInk else M.c.ink3, modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+        )
+        Spacer(Modifier.height(18.dp))
         Overline("Versione mini (facoltativa)")
         Spacer(Modifier.height(10.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -175,7 +192,7 @@ fun ColumnScope.VideoForm(
     Spacer(Modifier.height(18.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (onPlay != null) TonalButton("Avvia", onPlay, icon = "play_arrow")
-        PrimaryButton(if (edit != null) "Salva" else "Salva in Libreria", { onSave(title.trim().ifBlank { meta.title }, tags, mini) }, Modifier.weight(1f))
+        PrimaryButton(if (edit != null) "Salva" else "Salva in Libreria", { onSave(title.trim().ifBlank { meta.title }, tags, mini, start ?: 0, Trim.end(end, meta.durationSec)) }, Modifier.weight(1f), enabled = trimError == null)
     }
 }
 
@@ -253,6 +270,22 @@ private fun TitleField(value: String, onChange: (String) -> Unit) {
         )
         Spacer(Modifier.width(8.dp))
         Symbol("edit", 18.dp, M.c.ink3)
+    }
+}
+
+@Composable
+private fun TimeField(label: String, value: String, placeholder: String, modifier: Modifier, onChange: (String) -> Unit) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).background(M.c.surface2).padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Text(label, style = T.caption, color = M.c.ink2)
+        Box {
+            if (value.isEmpty()) Text(placeholder, style = ts(17, FontWeight.SemiBold), color = M.c.ink3)
+            BasicTextField(
+                value, { onChange(it.filter { c -> c.isDigit() || c in ":.,' " }.take(8)) }, singleLine = true,
+                textStyle = ts(17, FontWeight.SemiBold).copy(color = M.c.ink), cursorBrush = SolidColor(M.c.accent),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

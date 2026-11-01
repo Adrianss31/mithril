@@ -34,9 +34,18 @@ data class VideoEntity(
     val createdAt: Long = System.currentTimeMillis(),
     /** Video salvato sul telefono (content:// con permesso persistente); null per i video YouTube. */
     val localUri: String? = null,
+    /** Secondi da saltare all'inizio (intro). */
+    val startSec: Int = 0,
+    /** Dove fermarsi (prima dell'outro), in secondi dall'inizio del video; null fino alla fine. */
+    val endSec: Int? = null,
 ) {
     val tagList: List<String> get() = Tags.parse(tags)
     val isLocal: Boolean get() = localUri != null
+    val trimmed: Boolean get() = startSec > 0 || endSec != null
+    /** Durata effettiva, senza intro e outro; null se la durata non è ancora nota. */
+    val playSec: Int? get() = playSec(durationSec ?: 0).takeIf { it > 0 }
+    /** Durata effettiva per un video lungo [full] secondi. */
+    fun playSec(full: Int): Int = ((endSec ?: full) - startSec).coerceAtLeast(0)
 }
 
 /** Slot del planner: giorno (epochDay), ora (minuti dalla mezzanotte), luogo e sequenza ordinata di video. */
@@ -91,6 +100,7 @@ abstract class MithrilDao {
     @Query("UPDATE video SET timesDone = timesDone + :delta WHERE id IN (:ids)") abstract suspend fun bumpTimesDone(ids: List<Long>, delta: Int)
     @Query("UPDATE video SET embeddable = :ok WHERE id = :id") abstract suspend fun setEmbeddable(id: Long, ok: Boolean)
     @Query("UPDATE video SET durationSec = :sec WHERE id = :id AND (durationSec IS NULL OR durationSec = 0)") abstract suspend fun fillDuration(id: Long, sec: Int)
+    @Query("UPDATE video SET startSec = :start, endSec = :end WHERE id = :id") abstract suspend fun setTrim(id: Long, start: Int, end: Int?)
 
     @Query("SELECT * FROM slot ORDER BY date, timeMin") abstract fun slots(): Flow<List<SlotEntity>>
     @Query("SELECT * FROM slot WHERE date >= :from AND date <= :to ORDER BY date, timeMin") abstract suspend fun slotsBetween(from: Long, to: Long): List<SlotEntity>
@@ -128,7 +138,7 @@ abstract class MithrilDao {
 
 @Database(
     entities = [VideoEntity::class, SlotEntity::class, SessionLogEntity::class, WeightEntity::class, WeekPlanEntity::class, ReviewAnswerEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class MithrilDb : RoomDatabase() {
@@ -139,8 +149,14 @@ abstract class MithrilDb : RoomDatabase() {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) = db.execSQL("ALTER TABLE video ADD COLUMN localUri TEXT")
         }
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE video ADD COLUMN startSec INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE video ADD COLUMN endSec INTEGER")
+            }
+        }
         fun get(context: Context): MithrilDb = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db").addMigrations(MIGRATION_1_2).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
     }
 }

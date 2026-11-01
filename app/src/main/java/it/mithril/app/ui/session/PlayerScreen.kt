@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +58,7 @@ import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
+import it.mithril.app.domain.Trim
 import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SessionRequest
@@ -101,6 +103,11 @@ fun PlayerScreen(req: SessionRequest) {
     var index by remember { mutableIntStateOf(resume?.index ?: 0) }
     var startAt by remember { mutableFloatStateOf(resume?.position ?: 0f) }
     val learned = remember { mutableStateListOf<Int>().apply { addAll(videos.map { it.durationSec ?: 0 }) } }
+    // Inizio e fine di ogni video (intro e outro saltati); si possono cambiare anche da qui.
+    val clips = remember { mutableStateListOf<Pair<Int, Int?>>().apply { addAll(videos.map { it.startSec to it.endSec }) } }
+    fun clipStart(k: Int) = clips[k].first
+    fun clipLen(k: Int) = ((clips[k].second ?: learned[k]) - clips[k].first).coerceAtLeast(0)
+    var armedFor by remember { mutableIntStateOf(-1) }
     var watched by remember { mutableFloatStateOf(resume?.watched ?: 0f) }
     var lastPos by remember { mutableFloatStateOf(0f) }
     var finishing by remember { mutableStateOf(false) }
@@ -113,7 +120,7 @@ fun PlayerScreen(req: SessionRequest) {
     val current = videos[index]
     val casting = castUi.connectedTo != null && current.isLocal
     val engine: MediaEngine = when { casting -> Cast.engine; current.isLocal -> local; else -> yt }
-    val total = learned.sum().coerceAtLeast(1)
+    val total = videos.indices.sumOf { clipLen(it) }.coerceAtLeast(1)
     val ratio = (watched / total).coerceIn(0f, 1f)
 
     fun complete(mini: Boolean = req.mini) {
@@ -122,7 +129,7 @@ fun PlayerScreen(req: SessionRequest) {
         engine.pause()
         SessionProgress.clear(context)
         scope.launch {
-            val done = (0..index).count { k -> k < index || engine.state == 0 || engine.position > (learned[k] * 0.8f) }
+            val done = (0..index).count { k -> k < index || engine.state == 0 || engine.position - clipStart(k) > (clipLen(k) * 0.8f) }
             val ids = videos.map { it.id }
             val id = repo.logSession(req.slotId, mini, ratio, ids, Sessions.title(videos), total)
             nav.replace(Dest.Completion(id, req.copy(mini = mini), done.coerceAtLeast(1)))
@@ -135,25 +142,26 @@ fun PlayerScreen(req: SessionRequest) {
     var wasCasting by remember { mutableStateOf(false) }
     LaunchedEffect(index, casting) {
         val v = current
+        val from = maxOf(startAt, clipStart(index).toFloat())
         when {
             v.isLocal -> {
                 yt.pause()
                 val uri = v.localUri!!
                 if (!LocalVideos.readable(context, uri)) { toast.show("File non trovato sul telefono, passo al successivo"); goNext(); return@LaunchedEffect }
                 if (casting) {
-                    // Sulla TV il video riparte sempre dall'inizio: il collegamento richiede qualche secondo.
+                    // Sulla TV il video riparte sempre dall'inizio (dopo l'intro): il collegamento richiede qualche secondo.
                     local.pause()
-                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, 0f)?.let { toast.show(it); Cast.disconnect() }
+                    Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, clipStart(index).toFloat())?.let { toast.show(it); Cast.disconnect() }
                 } else if (local.loadedUri == uri) {
                     if (wasCasting) local.seek(Cast.engine.position)
                     local.play()
-                } else local.load(uri, startAt)
+                } else local.load(uri, from)
             }
             v.embeddable == false -> leave(Dest.External(req, v.id))
             else -> {
                 local.pause()
                 if (wasCasting) Cast.disconnect()
-                if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt, startAt) else yt.load(v.youtubeId, startAt)
+                if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt, from) else yt.load(v.youtubeId, from)
             }
         }
         wasCasting = casting
@@ -192,6 +200,38 @@ fun PlayerScreen(req: SessionRequest) {
         val delta = engine.position - lastPos
         if (engine.playing && delta > 0f && delta < 2.5f) watched += delta
         lastPos = engine.position
+        // Fine impostata (outro): si passa oltre. Solo dopo aver visto una posizione prima della fine,
+        // così la posizione rimasta dal video precedente non fa saltare quello nuovo.
+        val end = clips[index].second
+        if (end == null || engine.position < end - 1f) armedFor = index
+        else if (armedFor == index && engine.playing) { armedFor = -1; goNext() }
+    }
+    fun setTrim(start: Int, end: Int?, message: String) {
+        val k = index
+        val before = clips[k]
+        clips[k] = start to end
+        scope.launch { repo.setTrim(videos[k].id, start, end) }
+        toast.show(message, "Annulla") {
+            clips[k] = before
+            scope.launch { repo.setTrim(videos[k].id, before.first, before.second) }
+        }
+    }
+    fun startHere() {
+        val pos = engine.position.toInt()
+        val (_, end) = clips[index]
+        val full = learned[index].takeIf { it > 0 }
+        when {
+            end != null && end - pos < Trim.MIN_SEC -> toast.show("Troppo vicino alla fine impostata")
+            full != null && full - pos < Trim.MIN_SEC -> toast.show("Troppo vicino alla fine del video")
+            else -> setTrim(pos, end, if (pos > 0) "Da ora parte da ${Fmt.clock(pos)}" else "Da ora parte dall'inizio")
+        }
+    }
+    fun endHere() {
+        val pos = engine.position.toInt()
+        val start = clipStart(index)
+        if (pos - start < Trim.MIN_SEC) return toast.show("Troppo vicino all'inizio impostato")
+        val end = Trim.end(pos, learned[index])
+        setTrim(start, end, if (end != null) "Da ora finisce a ${Fmt.clock(end)}" else "Da ora arriva fino alla fine")
     }
     LaunchedEffect(yt.error) {
         val e = yt.error ?: return@LaunchedEffect
@@ -254,25 +294,28 @@ fun PlayerScreen(req: SessionRequest) {
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(14.dp))
-            Segments(learned, index, if (engine.duration > 0) engine.position / engine.duration else 0f)
+            val clipPos = (engine.position - clipStart(index)).coerceAtLeast(0f)
+            val clipDur = clipLen(index).toFloat().takeIf { it > 0f } ?: (engine.duration - clipStart(index)).coerceAtLeast(0f)
+            val clipProg = if (clipDur > 0f) (clipPos / clipDur).coerceIn(0f, 1f) else 0f
+            Segments(videos.indices.map { clipLen(it) }, index, clipProg)
             Spacer(Modifier.height(18.dp))
             Text("Video ${index + 1} di ${videos.size} · ${Tags.kind(current.tagList)}", style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
             Spacer(Modifier.height(4.dp))
             Text(current.title, style = T.heroTitle, color = PlayerInk, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(current.channel, style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
             Spacer(Modifier.height(18.dp))
-            val prog by animateFloatAsState(if (engine.duration > 0) (engine.position / engine.duration).coerceIn(0f, 1f) else 0f, tween(450), label = "prog")
+            val prog by animateFloatAsState(clipProg, tween(450), label = "prog")
             Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(PlayerInk.copy(alpha = 0.15f))) {
                 Box(Modifier.fillMaxWidth(prog).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(M.c.accent))
             }
             Spacer(Modifier.height(6.dp))
             Row {
-                Text(if (engine.position < 1f) "0:00" else Fmt.clock(engine.position.toInt()), style = T.caption, color = PlayerInk.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
-                Text(Fmt.clock(if (engine.duration > 0) engine.duration.toInt() else learned[index]), style = T.caption, color = PlayerInk.copy(alpha = 0.6f))
+                Text(if (clipPos < 1f) "0:00" else Fmt.clock(clipPos.toInt()), style = T.caption, color = PlayerInk.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
+                Text(Fmt.clock(clipDur.toInt()), style = T.caption, color = PlayerInk.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                RoundIconButton("replay", { engine.seek(0f); engine.play() }, size = 52.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Ricomincia il video")
+                RoundIconButton("replay", { engine.seek(clipStart(index).toFloat()); engine.play() }, size = 52.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Ricomincia il video")
                 RoundIconButton(
                     if (engine.playing) "pause" else "play_arrow",
                     { if (engine.playing) engine.pause() else engine.play() },
@@ -281,6 +324,16 @@ fun PlayerScreen(req: SessionRequest) {
                 )
                 RoundIconButton("skip_next", { goNext() }, size = 52.dp, iconSize = 30.dp, bg = Color.Transparent, fg = PlayerInk, enabled = !finishing, contentDescription = "Video successivo")
             }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+                TrimPill("Inizia da qui", enabled = !finishing, onClick = ::startHere)
+                TrimPill("Finisci qui", enabled = !finishing, onClick = ::endHere)
+            }
+            val (cs, ce) = clips[index]
+            if (cs > 0 || ce != null) Text(
+                listOfNotNull(cs.takeIf { it > 0 }?.let { "parte da ${Fmt.clock(it)}" }, ce?.let { "finisce a ${Fmt.clock(it)}" }).joinToString(" · ").replaceFirstChar { it.uppercase() },
+                style = T.caption, color = PlayerInk.copy(alpha = 0.5f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
             Spacer(Modifier.height(18.dp))
             videos.getOrNull(index + 1)?.let { NextCard(it) }
             AnimatedVisibility(ratio >= Sessions.DONE_RATIO, enter = fadeIn(tween(400)) + expandVertically(tween(400))) {
@@ -296,6 +349,16 @@ fun PlayerScreen(req: SessionRequest) {
     }
 }
 
+
+/** Segna l'inizio o la fine del video alla posizione attuale. */
+@Composable
+private fun TrimPill(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Text(
+        text, style = T.secondary.copy(fontWeight = FontWeight.Medium), color = PlayerInk.copy(alpha = 0.8f),
+        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(PlayerInk.copy(alpha = 0.08f))
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+    )
+}
 
 /** Un segmento per video, larghezza proporzionale ai minuti. */
 @Composable
@@ -325,6 +388,6 @@ private fun NextCard(v: VideoEntity) {
             Text("Dopo", style = T.caption, color = PlayerInk.copy(alpha = 0.55f))
             Text(v.title, style = T.title15, color = PlayerInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(Fmt.clock(v.durationSec), style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
+        Text(Fmt.clock(v.playSec), style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
     }
 }
