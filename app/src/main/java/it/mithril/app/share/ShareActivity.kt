@@ -77,9 +77,9 @@ class ShareActivity : ComponentActivity() {
                             Spacer(Modifier.height(18.dp))
                             PrimaryButton("Chiudi", { close() }, Modifier.fillMaxWidth())
                         }
-                        is St.Loaded -> VideoForm(st.meta, null, onSave = { title, tags, mini ->
+                        is St.Loaded -> VideoForm(st.meta, null, onSave = { title, tags, mini, start, end ->
                             scope.launch {
-                                repo.addVideo(st.meta.copy(title = title), tags, mini)
+                                repo.addVideo(st.meta.copy(title = title), tags, mini, start, end)
                                 Toast.makeText(applicationContext, "Salvato in Libreria", Toast.LENGTH_SHORT).show()
                                 close()
                             }

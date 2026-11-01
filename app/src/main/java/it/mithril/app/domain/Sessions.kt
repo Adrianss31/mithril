@@ -18,10 +18,10 @@ object Sessions {
     fun miniFor(sessionVideos: List<VideoEntity>, all: List<VideoEntity>): VideoEntity? {
         val byId = all.associateBy { it.id }
         sessionVideos.firstNotNullOfOrNull { v -> v.miniVideoId?.let { byId[it] } }?.let { return it }
-        return all.filter { (it.durationSec ?: Int.MAX_VALUE) <= MINI_MAX_SEC }.minByOrNull { it.durationSec ?: Int.MAX_VALUE }
+        return all.filter { (it.playSec ?: Int.MAX_VALUE) <= MINI_MAX_SEC }.minByOrNull { it.playSec ?: Int.MAX_VALUE }
     }
 
-    fun totalSec(videos: List<VideoEntity>): Int = videos.sumOf { it.durationSec ?: 0 }
+    fun totalSec(videos: List<VideoEntity>): Int = videos.sumOf { it.playSec ?: 0 }
 
     /** "Full body 25' senza attrezzi" → "Full body" (per notifiche e widget). */
     fun shortTitle(title: String): String {

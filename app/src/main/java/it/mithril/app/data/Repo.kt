@@ -46,14 +46,17 @@ class Repo(private val context: Context) {
     fun goals(): Map<Long, Int> = weekPlans.value.associate { it.weekStart to it.goalSessions }
 
     // --- Video ---
-    suspend fun addVideo(meta: VideoMeta, tags: Set<String>, miniId: Long?): Long {
+    suspend fun addVideo(meta: VideoMeta, tags: Set<String>, miniId: Long?, startSec: Int = 0, endSec: Int? = null): Long {
         val existing = dao.videoByYoutubeId(meta.youtubeId)
         val id = if (existing != null) {
+            // Ricondiviso senza indicare inizio e fine: restano quelli già salvati.
+            val keepTrim = startSec == 0 && endSec == null
             dao.updateVideo(existing.copy(title = meta.title, localUri = meta.localUri ?: existing.localUri, channel = meta.channel, durationSec = meta.durationSec ?: existing.durationSec,
-                tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable ?: existing.embeddable))
+                tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable ?: existing.embeddable, startSec = if (keepTrim) existing.startSec else startSec, endSec = if (keepTrim) existing.endSec else endSec))
             existing.id
         } else dao.insertVideo(VideoEntity(youtubeId = meta.youtubeId, title = meta.title, channel = meta.channel, durationSec = meta.durationSec,
-            thumbnailUrl = meta.thumbnailUrl, tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable, localUri = meta.localUri))
+            thumbnailUrl = meta.thumbnailUrl, tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable, localUri = meta.localUri,
+            startSec = startSec, endSec = endSec))
         changed(); return id
     }
     suspend fun updateVideo(v: VideoEntity) { dao.updateVideo(v); changed() }
@@ -69,6 +72,8 @@ class Repo(private val context: Context) {
         dao.video(id)?.let { LocalVideos.forget(context, it) }
         dao.deleteVideo(id); changed()
     }
+    /** Intro e outro da saltare: [end] null = fino alla fine. */
+    suspend fun setTrim(id: Long, start: Int, end: Int?) { dao.setTrim(id, start.coerceAtLeast(0), end); changed() }
     fun learnDuration(id: Long, sec: Int) { if (sec > 0) scope.launch { dao.fillDuration(id, sec) } }
     fun markEmbeddable(id: Long, ok: Boolean) { scope.launch { dao.setEmbeddable(id, ok) } }
 

@@ -82,7 +82,7 @@ fun ExternalVideoScreen(d: Dest.External) {
             val miniVideo = if (mini) Sessions.miniFor(videos, all ?: emptyList()) else null
             val ids = if (miniVideo != null) listOf(miniVideo.id) else videos.map { it.id }
             val title = if (miniVideo != null) miniVideo.title else Sessions.title(videos)
-            val sec = if (miniVideo != null) miniVideo.durationSec ?: 0 else Sessions.totalSec(videos)
+            val sec = if (miniVideo != null) miniVideo.playSec ?: 0 else Sessions.totalSec(videos)
             val id = repo.logSession(d.req.slotId, mini, 1f, ids, title, sec)
             nav.replace(Dest.Completion(id, d.req.copy(mini = mini, videoIds = ids), ids.size))
         }
@@ -96,11 +96,11 @@ fun ExternalVideoScreen(d: Dest.External) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(8.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                Thumb(v.thumbnailUrl, maxWidth, maxWidth * 9f / 16f, radius = 22.dp, duration = Fmt.clock(v.durationSec))
+                Thumb(v.thumbnailUrl, maxWidth, maxWidth * 9f / 16f, radius = 22.dp, duration = Fmt.clock(v.playSec))
             }
             Spacer(Modifier.height(16.dp))
             Text(v.title, style = T.heroTitle, color = M.c.ink, modifier = Modifier.padding(horizontal = 4.dp))
-            Text("${v.channel} · ${Fmt.minutes(v.durationSec).trimEnd('\'')} min", style = T.secondary, color = M.c.ink2, modifier = Modifier.padding(horizontal = 4.dp))
+            Text("${v.channel} · ${Fmt.minutes(v.playSec).trimEnd('\'')} min", style = T.secondary, color = M.c.ink2, modifier = Modifier.padding(horizontal = 4.dp))
             Spacer(Modifier.height(16.dp))
             Card(Modifier.fillMaxWidth()) {
                 Row {
@@ -114,7 +114,7 @@ fun ExternalVideoScreen(d: Dest.External) {
                 Spacer(Modifier.height(16.dp))
                 PrimaryButton("Apri su YouTube", {
                     opened = true
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(YouTube.watchUrl(v.youtubeId))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(YouTube.watchUrl(v.youtubeId) + (if (v.startSec > 0) "&t=${v.startSec}s" else ""))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runCatching { context.startActivity(intent) }.onFailure { toast.show("Non riesco ad aprire YouTube") }
                 }, Modifier.fillMaxWidth(), icon = "open_in_new", iconFilled = false)
             }

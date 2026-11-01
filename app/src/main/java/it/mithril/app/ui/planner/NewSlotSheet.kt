@@ -140,7 +140,7 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
                                 Spacer(Modifier.width(12.dp))
                                 Text(v.title, style = T.title15, color = M.c.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Spacer(Modifier.width(8.dp))
-                                Text(Fmt.clock(v.durationSec), style = T.secondary, color = M.c.ink3)
+                                Text(Fmt.clock(v.playSec), style = T.secondary, color = M.c.ink3)
                             }
                         }
                     }

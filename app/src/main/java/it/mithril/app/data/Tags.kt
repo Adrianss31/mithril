@@ -40,7 +40,7 @@ object Tags {
         if (q.isNotEmpty() && !video.title.contains(q, true) && !video.channel.contains(q, true)) return false
         if (filters.isEmpty()) return true
         val own = video.tagList.toMutableSet()
-        durationBucket(video.durationSec)?.let { own += it }
+        durationBucket(video.playSec)?.let { own += it }
         return filters.groupBy { group(it) }.all { (_, wanted) -> wanted.any { it in own } }
     }
 

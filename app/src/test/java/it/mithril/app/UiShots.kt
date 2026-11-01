@@ -54,7 +54,7 @@ abstract class ShotBase {
         val today = LocalDate.now()
         val mon = Week.start(today)
         val v = listOf(
-            VideoEntity(0, "aaaaaaaaaa1", "Full body 25' senza attrezzi", "Casa in Movimento", 25 * 60 + 12, "", "Forza,Media,Total body", timesDone = 7),
+            VideoEntity(0, "aaaaaaaaaa1", "Full body 25' senza attrezzi", "Casa in Movimento", 25 * 60 + 12, "", "Forza,Media,Total body", timesDone = 7, startSec = 45, endSec = 24 * 60 + 30),
             VideoEntity(0, "aaaaaaaaaa2", "Stretching serale 10'", "Corpo Lento", 10 * 60 + 30, "", "Stretching,Dolce", timesDone = 4),
             VideoEntity(0, "aaaaaaaaaa3", "Mobilità anche 15'", "Corpo Lento", 15 * 60 + 40, "", "Mobilità,Dolce,Total body", timesDone = 5),
             VideoEntity(0, "aaaaaaaaaa4", "Upper body manubri 30'", "Ferro Gentile", 31 * 60 + 5, "", "Forza,Media,Braccia", timesDone = 3, embeddable = false),
@@ -178,6 +178,17 @@ class EditVideoShot : ShotBase() {
         val repo = Repo.get(ApplicationProvider.getApplicationContext<Application>())
         val v = runBlocking { repo.dao.videoByYoutubeId("aaaaaaaaaa2")!! }
         shot("12_modifica_video") { it.select(Tab.LIBRARY); it.sheet = SheetKind.AddVideo(edit = v) }
+    }
+}
+
+// Schermo alto: il foglio intero, con inizio e fine (intro e outro saltati).
+@Config(application = Application::class, sdk = [34], qualifiers = "w412dp-h1400dp-xxhdpi")
+class EditTrimShot : ShotBase() {
+    @Test fun editTrim() {
+        seed()
+        val repo = Repo.get(ApplicationProvider.getApplicationContext<Application>())
+        val v = runBlocking { repo.dao.videoByYoutubeId("aaaaaaaaaa1")!! }
+        shot("12b_modifica_video_inizio_fine") { it.select(Tab.LIBRARY); it.sheet = SheetKind.AddVideo(edit = v) }
     }
 }
 

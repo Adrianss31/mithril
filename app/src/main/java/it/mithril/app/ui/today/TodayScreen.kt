@@ -218,8 +218,8 @@ private fun SessionCard(slot: SlotEntity, all: List<VideoEntity>, suggestMini: B
                 PrimaryButton("Avvia", onStart, Modifier.fillMaxWidth(), icon = "play_arrow")
             }
             if (mini != null) {
-                if (suggestMini) Glow(Modifier) { PrimaryButton("Mini ${Fmt.minutes(mini.durationSec)}", onMini, icon = null) }
-                else TonalButton("Mini ${Fmt.minutes(mini.durationSec)}", onMini)
+                if (suggestMini) Glow(Modifier) { PrimaryButton("Mini ${Fmt.minutes(mini.playSec)}", onMini, icon = null) }
+                else TonalButton("Mini ${Fmt.minutes(mini.playSec)}", onMini)
             }
         }
     }
@@ -240,7 +240,7 @@ fun VideoSequence(vids: List<VideoEntity>, modifier: Modifier = Modifier) {
     ) {
         vids.forEachIndexed { i, v ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Thumb(v.thumbnailUrl, 96.dp, 54.dp, radius = 12.dp, duration = Fmt.clock(v.durationSec), number = i + 1)
+                Thumb(v.thumbnailUrl, 96.dp, 54.dp, radius = 12.dp, duration = Fmt.clock(v.playSec), number = i + 1)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(v.title, style = T.title15, color = M.c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -295,7 +295,7 @@ private fun RestCard(next: SlotEntity?, all: List<VideoEntity>, modifier: Modifi
             val vids = Sessions.videosOf(next.videoIdList, all)
             Text(
                 "Prossima: ${Fmt.dayName(d.dayOfWeek).lowercase()} ${Fmt.time(next.timeMin)} · ${next.place} · " +
-                    vids.joinToString(" + ") { "${Sessions.shortTitle(it.title)} ${Fmt.minutes(it.durationSec)}" },
+                    vids.joinToString(" + ") { "${Sessions.shortTitle(it.title)} ${Fmt.minutes(it.playSec)}" },
                 style = T.body, color = M.c.ink2,
             )
         } else {

@@ -1,0 +1,4 @@
+- **Salta intro e outro**: per ogni video puoi scegliere dove inizia e dove finisce. In Libreria → Modifica video, sezione "Salta intro e outro", scrivi minuti e secondi (per esempio 0:45 e 24:30). Il video parte dopo l'intro e, arrivato alla fine scelta, passa al successivo o chiude la sessione.
+  - **Dal player**: mentre guardi tocchi "Inizia da qui" quando finisce l'intro, oppure "Finisci qui" quando comincia l'outro. Mithril se lo ricorda per le volte successive, e un tocco su "Annulla" torna indietro.
+  - Vale per i video di YouTube, per quelli del telefono e anche sulla TV. Se un video si apre nell'app YouTube, parte già dopo l'intro.
+  - Durata, barra di avanzamento, minuti della sessione e versione mini contano solo la parte che guardi davvero.
