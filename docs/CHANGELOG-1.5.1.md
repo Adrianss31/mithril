@@ -1,0 +1,4 @@
+- **Inizio e fine scelti guardando il video**: in Libreria apri un video e tocca "Scegli guardando il video". Si apre il video con una barra da scorrere, i tasti −10 s e +10 s e due riquadri, "Parte da" e "Finisce a". Quando arrivi al punto giusto tocchi "Segna qui": non serve sapere i minuti a memoria.
+  - Sulla barra, la parte che guarderai è evidenziata. "Prova" ti porta all'inizio scelto, oppure a pochi secondi dalla fine, per controllare che il punto sia giusto. "Azzera" fa tornare il video intero.
+  - Funziona anche con un video appena aggiunto: Mithril lo salva e poi lo apre.
+  - Se preferisci, puoi ancora scrivere i tempi a mano con "Oppure scrivi i tempi". È l'unico modo per i video che il canale permette di guardare solo su YouTube.

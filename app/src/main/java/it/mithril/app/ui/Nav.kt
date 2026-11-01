@@ -34,6 +34,8 @@ sealed interface Dest {
     data class Completion(val logId: Long, val req: SessionRequest, val videosDone: Int) : Dest
     data class Review(val weekStart: LocalDate) : Dest
     data class PlanWeek(val weekStart: LocalDate) : Dest
+    /** Inizio e fine di un video della Libreria, scelti guardandolo. */
+    data class Trim(val videoId: Long) : Dest
     data object Settings : Dest
     data object AllWeights : Dest
 }

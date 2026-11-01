@@ -63,6 +63,7 @@ import it.mithril.app.ui.session.CastSheet
 import it.mithril.app.ui.session.CompletionScreen
 import it.mithril.app.ui.session.ExternalVideoScreen
 import it.mithril.app.ui.session.PlayerScreen
+import it.mithril.app.ui.session.TrimScreen
 import it.mithril.app.ui.settings.SettingsScreen
 import it.mithril.app.ui.stats.StatsScreen
 import it.mithril.app.ui.theme.Ease
@@ -170,6 +171,7 @@ private fun Overlays(nav: Navigator) {
             when (d) {
                 is Dest.Player -> PlayerScreen(d.req)
                 is Dest.External -> ExternalVideoScreen(d)
+                is Dest.Trim -> TrimScreen(d)
                 is Dest.Completion -> CompletionScreen(d)
                 is Dest.Review -> ReviewScreen(d.weekStart)
                 is Dest.PlanWeek -> PlanWeekScreen(d.weekStart)
@@ -184,7 +186,7 @@ private fun overlayTransition(from: Dest?, to: Dest?, motion: Boolean): ContentT
     if (!motion) return EnterTransition.None togetherWith ExitTransition.None
     val enter = when (to) {
         null -> EnterTransition.None
-        is Dest.Player -> fadeIn(tween(450, easing = Ease.LongOut)) + slideInVertically(tween(450, easing = Ease.LongOut)) { (it * 0.06f).toInt() }
+        is Dest.Player, is Dest.Trim -> fadeIn(tween(450, easing = Ease.LongOut)) + slideInVertically(tween(450, easing = Ease.LongOut)) { (it * 0.06f).toInt() }
         // Il completamento ha la sua rivelazione circolare.
         is Dest.Completion -> EnterTransition.None
         else -> fadeIn(tween(420, easing = Ease.Standard)) + slideInHorizontally(tween(420, easing = Ease.Standard)) { (it * 0.08f).toInt() }

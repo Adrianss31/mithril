@@ -53,6 +53,7 @@ import it.mithril.app.data.YouTube
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Trim
+import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Chip
@@ -63,6 +64,7 @@ import it.mithril.app.ui.components.PrimaryButton
 import it.mithril.app.ui.components.RoundIconButton
 import it.mithril.app.ui.components.Symbol
 import it.mithril.app.ui.components.Thumb
+import it.mithril.app.ui.components.TextLink
 import it.mithril.app.ui.components.TonalButton
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.T
@@ -97,6 +99,16 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
             }
         },
         onPlay = edit?.let { v -> { onDone(); nav.startVideos(listOf(v.id)) } },
+        // Salva quanto scritto finora e apre il video per scegliere inizio e fine guardandolo.
+        onTrim = { title, tags, mini, start, end ->
+            scope.launch {
+                val id = if (edit != null) {
+                    repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini, startSec = start, endSec = end)); edit.id
+                } else repo.addVideo(meta.copy(title = title), tags, mini, start, end)
+                nav.push(Dest.Trim(id))
+            }
+            onDone()
+        },
     )
 }
 
@@ -108,6 +120,7 @@ fun ColumnScope.VideoForm(
     onSave: (title: String, tags: Set<String>, mini: Long?, start: Int, end: Int?) -> Unit,
     onDelete: (() -> Unit)? = null,
     onPlay: (() -> Unit)? = null,
+    onTrim: ((title: String, tags: Set<String>, mini: Long?, start: Int, end: Int?) -> Unit)? = null,
 ) {
     val repo = rememberRepo()
     val videos by repo.videos.collectAsStateWithLifecycle()
@@ -120,6 +133,8 @@ fun ColumnScope.VideoForm(
     val start = Trim.parse(startText)
     val end = Trim.parse(endText)
     val trimError = Trim.error(start, end, startText, endText, meta.durationSec)
+    val canWatch = onTrim != null && meta.embeddable != false
+    var typing by remember(meta.youtubeId) { mutableStateOf(!canWatch) }
     val minis = (videos ?: emptyList()).filter { it.youtubeId != meta.youtubeId && (it.playSec ?: Int.MAX_VALUE) <= Sessions.MINI_MAX_SEC }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -172,14 +187,36 @@ fun ColumnScope.VideoForm(
         Spacer(Modifier.height(18.dp))
         Overline("Salta intro e outro")
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TimeField("Parte da", startText, "0:00", Modifier.weight(1f)) { startText = it }
-            TimeField("Finisce a", endText, meta.durationSec?.let { Fmt.clock(it) } ?: "alla fine", Modifier.weight(1f)) { endText = it }
+        if (canWatch) {
+            Text(
+                when {
+                    trimError != null -> "Controlla i tempi scritti qui sotto"
+                    (start ?: 0) > 0 && end != null -> "Parte da ${Fmt.clock(start)}, finisce a ${Fmt.clock(end)}"
+                    (start ?: 0) > 0 -> "Parte da ${Fmt.clock(start)}, arriva fino alla fine"
+                    end != null -> "Parte dall'inizio, finisce a ${Fmt.clock(end)}"
+                    else -> "Il video si guarda tutto, dall'inizio alla fine"
+                },
+                style = T.body14, color = M.c.ink, modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            TonalButton(
+                "Scegli guardando il video",
+                { if (trimError == null) onTrim!!(title.trim().ifBlank { meta.title }, tags, mini, start ?: 0, Trim.end(end, meta.durationSec)) },
+                Modifier.fillMaxWidth(), icon = "play_arrow", enabled = trimError == null,
+            )
+            if (!typing) TextLink("Oppure scrivi i tempi", { typing = true }, Modifier.padding(top = 10.dp, start = 4.dp))
         }
-        Text(
-            trimError ?: "Minuti e secondi, come 1:30. Puoi segnarli anche dal player, mentre guardi.",
-            style = T.caption, color = if (trimError != null) M.c.accentInk else M.c.ink3, modifier = Modifier.padding(top = 8.dp, start = 4.dp),
-        )
+        if (typing) {
+            if (canWatch) Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TimeField("Parte da", startText, "0:00", Modifier.weight(1f)) { startText = it }
+                TimeField("Finisce a", endText, meta.durationSec?.let { Fmt.clock(it) } ?: "alla fine", Modifier.weight(1f)) { endText = it }
+            }
+            Text(
+                trimError ?: "Minuti e secondi, come 1:30.",
+                style = T.caption, color = if (trimError != null) M.c.accentInk else M.c.ink3, modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+            )
+        }
         Spacer(Modifier.height(18.dp))
         Overline("Versione mini (facoltativa)")
         Spacer(Modifier.height(10.dp))
