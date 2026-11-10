@@ -38,6 +38,9 @@ class Trend private constructor(
         return (now - before) to span
     }
 
+    /** Ritmo del trend in kg a settimana (negativo = cala), lo stesso usato da proiezione e obiettivo. */
+    fun weeklyRate(today: Long): Double? = dailySlope(today)?.let { it * 7 }
+
     /** Variazione giornaliera media del trend (negativa = cala), sulle ultime due settimane se possibile. */
     fun dailySlope(today: Long): Double? = slopeSpan(today)?.let { span -> (at(today)!! - at(today - span)!!) / span }
 
@@ -103,13 +106,22 @@ data class Projection(val days: Int, val endKg: Double, val slopePerDay: Double,
     val stable: Boolean get() = abs(slopePerDay) <= Trend.STABLE_SLOPE
 }
 
-/** Obiettivo di peso e stato rispetto al piano. */
+/**
+ * Obiettivo di peso e stato rispetto al piano. Tutto si basa su un solo ritmo, quello del trend
+ * sulle ultime due settimane ([Trend.dailySlope]): niente confronti a 7 o 30 giorni che dicono cose diverse.
+ */
 data class GoalStatus(
     val onTrack: Boolean,
     val progress: Float,
+    /** Kg già fatti dalla partenza verso l'obiettivo (mai negativi). */
+    val doneKg: Double,
     val remainingKg: Double,
     val eta: LocalDate?,
     val stable: Boolean,
+    /** Kg a settimana verso l'obiettivo al ritmo attuale; null se il trend ha meno di una settimana. */
+    val weeklyTowards: Double?,
+    /** −1 se l'obiettivo è dimagrire, +1 se è aumentare. */
+    val direction: Double,
 )
 
 object Goal {
@@ -120,17 +132,18 @@ object Goal {
     fun status(trend: Trend, today: LocalDate, targetKg: Double, weeklyRate: Double, startKg: Double?): GoalStatus? {
         val t = today.toEpochDay()
         val now = trend.at(t) ?: return null
-        val dir = if (targetKg < (startKg ?: now)) -1.0 else 1.0
-        val remaining = (targetKg - now) * dir // > 0 se manca ancora strada
-        val slope = trend.dailySlope(t)
-        val towards = slope?.let { it * dir } ?: 0.0 // kg/giorno verso l'obiettivo
-        val weekly = trend.change(t, 7)?.let { it * dir } ?: (towards * 7)
-        val onTrack = remaining <= 0 || weekly >= weeklyRate - 1e-9
-        val stable = towards <= Trend.STABLE_SLOPE
-        val eta = if (remaining > 0 && !stable) today.plusDays(ceil(remaining / towards).toLong().coerceAtMost(3650)) else null
         val start = startKg ?: now
+        val dir = if (targetKg < start) -1.0 else 1.0
+        val remaining = (targetKg - now) * dir // > 0 se manca ancora strada
+        val towards = trend.dailySlope(t)?.let { it * dir } // kg/giorno verso l'obiettivo
+        val weekly = towards?.let { it * 7 }
+        // Confronto sui valori mostrati (due decimali), così "−0,25 su 0,25" non risulta mai in ritardo.
+        val onTrack = remaining <= 0 || (weekly != null && Math.round(weekly * 100) >= Math.round(weeklyRate * 100))
+        val stable = towards == null || towards <= Trend.STABLE_SLOPE
+        val eta = if (remaining > 0 && !stable) today.plusDays(ceil(remaining / towards!!).toLong().coerceAtMost(3650)) else null
         val total = abs(targetKg - start)
-        val progress = if (total < 1e-6) 1f else ((start - now) * -dir / total).toFloat().coerceIn(0f, 1f)
-        return GoalStatus(onTrack, progress, remaining.coerceAtLeast(0.0), eta, stable)
+        val done = ((now - start) * dir).coerceAtLeast(0.0)
+        val progress = if (total < 1e-6) 1f else (done / total).toFloat().coerceIn(0f, 1f)
+        return GoalStatus(onTrack, progress, done, remaining.coerceAtLeast(0.0), eta, stable, weekly, dir)
     }
 }

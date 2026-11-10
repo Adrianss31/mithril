@@ -1,0 +1,11 @@
+- **Inizio e fine solo dalla Libreria**: nel player non ci sono più i tasti "Inizia da qui" e "Finisci qui", così non li tocchi per sbaglio mentre ti alleni. Inizio e fine si scelgono in Libreria → apri il video → "Scegli guardando il video" (o scrivendo i tempi). Il player continua a rispettarli e mostra sotto la barra da dove parte e dove finisce il video.
+- **Schermata Peso più chiara, con un solo ritmo**: prima c'erano la variazione a 7 giorni, quella a 30 giorni e la proiezione sulle ultime 2 settimane, che dicevano cose diverse. Ora c'è un solo numero, il **ritmo** in kg a settimana misurato sul trend delle ultime 2 settimane, e tutto il resto usa quello.
+  - In alto, accanto al trend attuale, il ritmo (per esempio "−0,32 kg/sett."). Sotto il grafico la frase dice dove porta quel ritmo nel periodo scelto.
+  - Tolti i riquadri "7 giorni" e "30 giorni".
+  - Il riquadro Obiettivo mostra la barra dalla partenza all'obiettivo, i kg fatti e quelli da fare, la data d'arrivo con questo ritmo e il confronto col ritmo previsto in Impostazioni: "In linea col piano" oppure "Più lento del piano", con i due numeri.
+  - Nel grafico il peso previsto non compare più due volte (in fondo alla proiezione e sull'asse).
+  - Lo stesso ritmo è usato anche in Oggi, nei widget Peso e in quello Traguardo, che ora dicono sempre la stessa cosa dell'app.
+- **Widget Traguardo su una riga**: ridisegnato per stare davvero in una riga della home. A sinistra i kg da fare, al centro la barra, a destra l'obiettivo e il periodo d'arrivo (in colore se sei più lento del piano). Niente più testo tagliato.
+- **Nuovo widget Traguardo grande (2 righe)**: trend di oggi e obiettivo, la barra, kg fatti e da fare, il periodo d'arrivo e il ritmo confrontato col piano. Riempie le due righe senza lasciare spazio vuoto.
+  - Entrambi i widget si possono allargare e ridimensionare: sotto le due righe di altezza si mostra la versione su una riga, sopra quella grande. Se hai già il Traguardo alto due righe, dopo l'aggiornamento prende da solo la versione grande.
+  - La data d'arrivo ora ha l'anno quando non è quello in corso ("fine ago 2027" invece di "28 ago").

@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +57,6 @@ import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
-import it.mithril.app.domain.Trim
 import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SessionRequest
@@ -106,8 +104,8 @@ fun PlayerScreen(req: SessionRequest) {
     var index by remember { mutableIntStateOf(resume?.index ?: 0) }
     var startAt by remember { mutableFloatStateOf(resume?.position ?: 0f) }
     val learned = remember { mutableStateListOf<Int>().apply { addAll(videos.map { it.durationSec ?: 0 }) } }
-    // Inizio e fine di ogni video (intro e outro saltati); si possono cambiare anche da qui.
-    val clips = remember { mutableStateListOf<Pair<Int, Int?>>().apply { addAll(videos.map { it.startSec to it.endSec }) } }
+    // Inizio e fine di ogni video (intro e outro saltati): si scelgono dalla Libreria.
+    val clips = remember { videos.map { it.startSec to it.endSec } }
     fun clipStart(k: Int) = clips[k].first
     fun clipLen(k: Int) = ((clips[k].second ?: learned[k]) - clips[k].first).coerceAtLeast(0)
     var armedFor by remember { mutableIntStateOf(-1) }
@@ -230,33 +228,6 @@ fun PlayerScreen(req: SessionRequest) {
         if (end == null || engine.position < end - 1f) armedFor = index
         else if (armedFor == index && engine.playing) { armedFor = -1; goNext() }
     }
-    fun setTrim(start: Int, end: Int?, message: String) {
-        val k = index
-        val before = clips[k]
-        clips[k] = start to end
-        scope.launch { repo.setTrim(videos[k].id, start, end) }
-        toast.show(message, "Annulla") {
-            clips[k] = before
-            scope.launch { repo.setTrim(videos[k].id, before.first, before.second) }
-        }
-    }
-    fun startHere() {
-        val pos = engine.position.toInt()
-        val (_, end) = clips[index]
-        val full = learned[index].takeIf { it > 0 }
-        when {
-            end != null && end - pos < Trim.MIN_SEC -> toast.show("Troppo vicino alla fine impostata")
-            full != null && full - pos < Trim.MIN_SEC -> toast.show("Troppo vicino alla fine del video")
-            else -> setTrim(pos, end, if (pos > 0) "Da ora parte da ${Fmt.clock(pos)}" else "Da ora parte dall'inizio")
-        }
-    }
-    fun endHere() {
-        val pos = engine.position.toInt()
-        val start = clipStart(index)
-        if (pos - start < Trim.MIN_SEC) return toast.show("Troppo vicino all'inizio impostato")
-        val end = Trim.end(pos, learned[index])
-        setTrim(start, end, if (end != null) "Da ora finisce a ${Fmt.clock(end)}" else "Da ora arriva fino alla fine")
-    }
     LaunchedEffect(yt.error) {
         val e = yt.error ?: return@LaunchedEffect
         when (e) {
@@ -351,11 +322,6 @@ fun PlayerScreen(req: SessionRequest) {
                 )
                 RoundIconButton("skip_next", { goNext() }, size = 52.dp, iconSize = 30.dp, bg = Color.Transparent, fg = PlayerInk, enabled = !finishing, contentDescription = "Video successivo")
             }
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-                TrimPill("Inizia da qui", enabled = !finishing, onClick = ::startHere)
-                TrimPill("Finisci qui", enabled = !finishing, onClick = ::endHere)
-            }
             val (cs, ce) = clips[index]
             if (cs > 0 || ce != null) Text(
                 listOfNotNull(cs.takeIf { it > 0 }?.let { "parte da ${Fmt.clock(it)}" }, ce?.let { "finisce a ${Fmt.clock(it)}" }).joinToString(" · ").replaceFirstChar { it.uppercase() },
@@ -376,16 +342,6 @@ fun PlayerScreen(req: SessionRequest) {
     }
 }
 
-
-/** Segna l'inizio o la fine del video alla posizione attuale. */
-@Composable
-private fun TrimPill(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Text(
-        text, style = T.secondary.copy(fontWeight = FontWeight.Medium), color = PlayerInk.copy(alpha = 0.8f),
-        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(PlayerInk.copy(alpha = 0.08f))
-            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
-    )
-}
 
 /** Un segmento per video, larghezza proporzionale ai minuti. */
 @Composable

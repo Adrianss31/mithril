@@ -22,6 +22,15 @@ object Fmt {
             else -> "0,0"
         }
     }
+    /** Ritmo in kg a settimana, con due decimali come in Impostazioni: "−0,32" */
+    fun signedRate(v: Double): String {
+        val r = (v * 100).roundToInt() / 100.0
+        return when {
+            r < 0 -> MINUS + String.format(Locale.ITALY, "%.2f", abs(r))
+            r > 0 -> "+" + String.format(Locale.ITALY, "%.2f", r)
+            else -> "0,00"
+        }
+    }
     fun thousands(n: Int): String = NumberFormat.getIntegerInstance(Locale.ITALY).format(n)
 
     fun dayLetter(d: DayOfWeek): String = when (d) {
@@ -70,6 +79,16 @@ object Fmt {
             else -> "fine"
         }
         return if (date.year == today.year) "$part ${month(date)}" else "$part ${month(date)} ${date.year}"
+    }
+
+    /** Come [eta] ma col mese abbreviato, per i widget: "fine ago 2027" */
+    fun etaShort(date: LocalDate, today: LocalDate = LocalDate.now()): String {
+        val part = when {
+            date.dayOfMonth <= 10 -> "inizio"
+            date.dayOfMonth <= 20 -> "metà"
+            else -> "fine"
+        }
+        return if (date.year == today.year) "$part ${monthShort(date)}" else "$part ${monthShort(date)} ${date.year}"
     }
 
     fun overlineFor(min: Int): String = when {

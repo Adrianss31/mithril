@@ -173,6 +173,35 @@ class DomainTest {
         assertEquals(listOf(9000, 6000, 6000), Stats.rollingSteps(listOf(mon.toEpochDay(), mon.plusDays(1).toEpochDay(), mon.plusDays(2).toEpochDay()), steps))
     }
 
+    @Test fun oneRateForChartGoalAndWidgets() {
+        val today = friday.toEpochDay()
+        // −0,04 kg al giorno = −0,28 kg a settimana, partenza 90 e obiettivo 80.
+        val trend = Trend.of((0..60).map { (today - 60 + it) to 90.0 - it * 0.04 }, today)
+        val rate = trend.weeklyRate(today)!!
+        assertEquals(trend.dailySlope(today)!! * 7, rate, 1e-9)
+        assertEquals(rate, trend.projection(today, 91, 80.0)!!.slopePerDay * 7, 1e-9)
+        // Lo stato dell'obiettivo usa lo stesso ritmo: più lento di 0,5, in linea con 0,25.
+        val slow = Goal.status(trend, friday, 80.0, 0.5, 90.0)!!
+        assertEquals(-rate, slow.weeklyTowards!!, 1e-9)
+        assertFalse(slow.onTrack)
+        assertEquals(-1.0, slow.direction, 0.0)
+        assertTrue(Goal.status(trend, friday, 80.0, 0.25, 90.0)!!.onTrack)
+        assertEquals(slow.remainingKg + slow.doneKg, 10.0, 1e-9)
+        // Meno di una settimana: niente ritmo, mai "in linea".
+        val young = Trend.of((0..4).map { (today - 4 + it) to 85.0 - it * 0.1 }, today)
+        assertNull(young.weeklyRate(today))
+        val y = Goal.status(young, friday, 80.0, 0.25, 85.0)!!
+        assertNull(y.weeklyTowards); assertFalse(y.onTrack); assertNull(y.eta)
+    }
+
+    @Test fun rateAndShortEtaFormats() {
+        assertEquals("−0,32", Fmt.signedRate(-0.318))
+        assertEquals("+0,25", Fmt.signedRate(0.25))
+        assertEquals("0,00", Fmt.signedRate(-0.001))
+        assertEquals("fine ago 2027", Fmt.etaShort(LocalDate.of(2027, 8, 28), friday))
+        assertEquals("metà nov", Fmt.etaShort(LocalDate.of(2026, 11, 15), friday))
+    }
+
     @Test fun recentChangeWorksOnAYoungTrend() {
         val t = friday.toEpochDay()
         val young = Trend.of((0..5).map { t - it to 86.0 + it * 0.3 }, t) // pesate da 5 giorni

@@ -23,6 +23,7 @@ import it.mithril.app.ui.components.drawTrimmed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import kotlin.math.abs
 import kotlin.math.max
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Trend
@@ -88,6 +89,8 @@ fun WeightChart(trend: Trend, today: LocalDate, range: Range, goalKg: Double?, m
         // Etichette Y (3) a destra
         for (k in 0..2) {
             val v = hi - pad - (hi - lo - 2 * pad) * k / 2
+            // Il peso previsto ha già la sua etichetta in fondo alla proiezione: niente doppione sull'asse.
+            if (proj != null && abs(y(v) - y(proj.endKg)) < 14.dp.toPx()) continue
             val txt = measurer.measure(Fmt.kg(v), labelStyle)
             drawText(txt, topLeft = Offset(w + 8.dp.toPx(), (y(v) - txt.size.height / 2).coerceIn(0f, h - txt.size.height)))
         }

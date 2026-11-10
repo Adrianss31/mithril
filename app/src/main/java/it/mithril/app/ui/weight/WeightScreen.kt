@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,6 +49,7 @@ import java.time.LocalDate
 import it.mithril.app.data.WeightEntity
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
+import it.mithril.app.domain.GoalStatus
 import it.mithril.app.domain.Trend
 import it.mithril.app.ui.BottomGap
 import it.mithril.app.ui.Dest
@@ -57,6 +57,7 @@ import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Card
 import it.mithril.app.ui.components.Divider
+import it.mithril.app.ui.components.GrowBar
 import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.Overline
 import it.mithril.app.ui.components.PrimaryButton
@@ -114,16 +115,11 @@ fun WeightScreen() {
                 else -> TrendCard(trend, today, range, settings.goalKg, Modifier.rise(0, epoch)) { range = it }
             }
             if (enough) {
-                val t = today.toEpochDay()
-                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ChangeCard("7 giorni", trend.change(t, 7), Modifier.weight(1f).fillMaxHeight().rise(1, epoch))
-                    ChangeCard("30 giorni", trend.change(t, 30), Modifier.weight(1f).fillMaxHeight().rise(2, epoch))
-                }
-                GoalCard(trend, today, settings.goalKg, settings.weeklyRateKg, settings.goalStartKg, Modifier.rise(3, epoch))
+                GoalCard(trend, today, settings.goalKg, settings.weeklyRateKg, settings.goalStartKg, Modifier.rise(1, epoch))
             } else if (weights.isNotEmpty() && settings.goalKg == null) {
                 GoalCard(trend, today, null, settings.weeklyRateKg, null, Modifier.rise(1, epoch))
             }
-            if (weights.isNotEmpty()) WeighInsCard(weights.reversed().take(10), weights.size, Modifier.rise(4, epoch))
+            if (weights.isNotEmpty()) WeighInsCard(weights.reversed().take(10), weights.size, Modifier.rise(2, epoch))
             Spacer(Modifier.height(BottomGap))
         }
     }
@@ -133,14 +129,20 @@ fun WeightScreen() {
 private fun TrendCard(trend: Trend, today: LocalDate, range: Range, goalKg: Double?, modifier: Modifier, onRange: (Range) -> Unit) {
     val t = today.toEpochDay()
     val now = trend.at(t)
-    val change = trend.change(t, 7)
+    val rate = trend.weeklyRate(t)
     Card(modifier.fillMaxWidth(), padding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
                 Text("Trend attuale", style = T.secondary, color = M.c.ink2)
                 if (now != null) StatValue(Fmt.kg(now), "kg")
             }
-            if (change != null) Text("${Fmt.signedKg(change)} kg\nin 7 giorni", style = T.secondary, color = M.c.ink2, textAlign = TextAlign.End, modifier = Modifier.padding(bottom = 6.dp))
+            // Un solo ritmo per tutta la schermata: lo stesso di proiezione e obiettivo.
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 6.dp)) {
+                if (rate != null) {
+                    Text("${Fmt.signedRate(rate)} kg/sett.", style = ts(17, FontWeight.SemiBold), color = M.c.ink)
+                    Text(if (trend.slopeSpan(t) == 14) "ritmo · ultime 2 settimane" else "ritmo · ultima settimana", style = T.caption, color = M.c.ink3)
+                } else Text("Il ritmo compare\ndopo una settimana", style = T.caption, color = M.c.ink3, textAlign = TextAlign.End)
+            }
         }
         Spacer(Modifier.height(14.dp))
         Segmented(range, onRange)
@@ -153,15 +155,14 @@ private fun TrendCard(trend: Trend, today: LocalDate, range: Range, goalKg: Doub
     }
 }
 
-/** La proiezione a parole: su quale ritmo si basa, fino a quando arriva e quale peso prevede. */
+/** La proiezione a parole: fino a quando arriva e quale peso prevede, al ritmo mostrato in alto. */
 private fun projectionNote(trend: Trend, today: LocalDate, range: Range, goalKg: Double?): String {
     val p = trend.projection(today.toEpochDay(), range.days, goalKg) ?: return "La proiezione compare dopo una settimana di trend."
-    val basis = if (p.basisDays >= 14) "delle ultime 2 settimane" else "dell'ultima settimana"
     val day = Fmt.dateShort(today.plusDays(p.days.toLong()), today)
     return when {
-        p.stable -> "Trend stabile nel corso $basis: se resta così, il $day sarai ancora a ${Fmt.kg(p.endKg)} kg."
-        p.reachesGoal -> "Al ritmo $basis (${Fmt.signedKg(p.slopePerDay * 7)} kg a settimana) arrivi all'obiettivo di ${Fmt.kg(p.endKg)} kg verso il $day."
-        else -> "Al ritmo $basis (${Fmt.signedKg(p.slopePerDay * 7)} kg a settimana), il $day saresti a ${Fmt.kg(p.endKg)} kg."
+        p.stable -> "Trend stabile: se resta così, il $day sarai ancora a ${Fmt.kg(p.endKg)} kg."
+        p.reachesGoal -> "A questo ritmo arrivi all'obiettivo di ${Fmt.kg(p.endKg)} kg verso il $day."
+        else -> "A questo ritmo, il $day saresti a ${Fmt.kg(p.endKg)} kg."
     }
 }
 
@@ -203,15 +204,6 @@ private fun Legend() {
 }
 
 @Composable
-private fun ChangeCard(label: String, change: Double?, modifier: Modifier) {
-    Card(modifier, radius = 22.dp, padding = PaddingValues(16.dp)) {
-        Text(label, style = T.secondary, color = M.c.ink2)
-        Spacer(Modifier.height(2.dp))
-        Text(change?.let { "${Fmt.signedKg(it)} kg" } ?: "—", style = ts(22, FontWeight.SemiBold), color = M.c.ink)
-    }
-}
-
-@Composable
 private fun GoalCard(trend: Trend, today: LocalDate, goalKg: Double?, rate: Double, startKg: Double?, modifier: Modifier) {
     val nav = LocalNav.current
     Card(modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(16.dp), onClick = { nav.push(Dest.Settings) }) {
@@ -236,16 +228,42 @@ private fun GoalCard(trend: Trend, today: LocalDate, goalKg: Double?, rate: Doub
                     status == null -> {}
                     status.remainingKg <= 0.0 -> Text("Raggiunto ✓", style = T.title15, color = M.c.accent)
                     status.eta != null -> {
-                        Text("Con questo trend", style = T.secondary, color = M.c.ink2)
-                        Text(Fmt.eta(status.eta), style = T.title15, color = M.c.ink)
-                    }
-                    else -> {
-                        Text("Trend stabile", style = T.title15, color = M.c.ink)
-                        Text("ogni passo conta", style = T.secondary, color = M.c.ink2)
+                        Text("Con questo ritmo", style = T.secondary, color = M.c.ink2)
+                        Text(Fmt.eta(status.eta, today), style = T.title15, color = M.c.ink)
                     }
                 }
             }
         }
+        if (status == null) return@Card
+        Spacer(Modifier.height(14.dp))
+        GrowBar(status.progress, Modifier.fillMaxWidth(), height = 8.dp)
+        Spacer(Modifier.height(6.dp))
+        Row {
+            Text("${Fmt.kg(status.doneKg)} kg fatti", style = T.caption, color = M.c.ink2, modifier = Modifier.weight(1f))
+            Text("${Fmt.kg(status.remainingKg)} kg da fare", style = T.caption, color = M.c.ink2)
+        }
+        Spacer(Modifier.height(12.dp))
+        Divider(Modifier.fillMaxWidth())
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(if (status.onTrack) M.c.accent else M.c.ink3))
+            Spacer(Modifier.width(10.dp))
+            Text(planLine(status, trend.weeklyRate(today.toEpochDay()), rate * status.direction), style = T.body14, color = M.c.ink, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/** Il ritmo attuale (lo stesso del grafico) confrontato col ritmo previsto in Impostazioni. */
+private fun planLine(s: GoalStatus, current: Double?, plan: Double): String {
+    val planTxt = Fmt.signedRate(plan)
+    val cur = current?.let { Fmt.signedRate(it) }
+    return when {
+        s.remainingKg <= 0.0 -> "Ora conta mantenere il trend."
+        cur == null -> "Il ritmo compare dopo una settimana di trend. Piano: $planTxt kg a settimana."
+        s.onTrack -> "In linea col piano: $cur kg a settimana (previsti $planTxt)."
+        s.weeklyTowards != null && s.weeklyTowards < -Trend.STABLE_SLOPE * 7 -> "Il trend si allontana dall'obiettivo: $cur kg a settimana (previsti $planTxt)."
+        s.stable -> "Trend fermo: il piano prevede $planTxt kg a settimana."
+        else -> "Più lento del piano: $cur kg a settimana (previsti $planTxt)."
     }
 }
 

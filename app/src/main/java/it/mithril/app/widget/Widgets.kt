@@ -72,6 +72,7 @@ object Widgets {
         runCatching { FirstVideoWidget().updateAll(context) }
         runCatching { WeightSmallWidget().updateAll(context) }
         runCatching { GoalWidget().updateAll(context) }
+        runCatching { GoalLargeWidget().updateAll(context) }
     }
 }
 
@@ -98,7 +99,7 @@ private suspend fun loadWeight(context: Context): WeightData {
     val trend = Trend.of(w.map { it.date to it.kg }, t)
     val now = trend.at(t)
     val status = s.goalKg?.let { Goal.status(trend, today, it, s.weeklyRateKg, s.goalStartKg) }
-    return WeightData(now, true, trend.change(t, 7), s.goalKg, status?.progress, status?.onTrack, s.goalKg?.let { g -> now?.let { g - it } }, status?.eta)
+    return WeightData(now, true, trend.weeklyRate(t), s.goalKg, status?.progress, status?.onTrack, s.goalKg?.let { g -> now?.let { g - it } }, status?.eta)
 }
 
 class WeightWidget : GlanceAppWidget() {
@@ -127,8 +128,8 @@ class WeightWidget : GlanceAppWidget() {
                             Text(d.value?.let { Fmt.kg(it) } ?: "—", style = TextStyle(color = WC.ink, fontSize = 28.sp, fontWeight = FontWeight.Medium))
                             Text(" kg", style = TextStyle(color = WC.ink2, fontSize = 13.sp), modifier = GlanceModifier.padding(bottom = 4.dp))
                             if (d.weekChange != null) {
-                                Text("  ${Fmt.signedKg(d.weekChange)} kg", style = TextStyle(color = WC.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(bottom = 4.dp))
-                                Text(" vs sett. scorsa", style = TextStyle(color = WC.ink3, fontSize = 12.sp), modifier = GlanceModifier.padding(bottom = 4.dp))
+                                Text("  ${Fmt.signedRate(d.weekChange)}", style = TextStyle(color = WC.accent, fontSize = 13.sp, fontWeight = FontWeight.Bold), modifier = GlanceModifier.padding(bottom = 4.dp))
+                                Text(" kg/sett.", style = TextStyle(color = WC.ink3, fontSize = 12.sp), modifier = GlanceModifier.padding(bottom = 4.dp))
                             }
                         }
                     }
@@ -144,14 +145,14 @@ class WeightWidget : GlanceAppWidget() {
                     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("● ", style = TextStyle(color = WC.accent, fontSize = 10.sp))
                         Text(
-                            if (d.onTrack == true) "In linea col piano" else "Sotto il ritmo previsto",
+                            if (d.onTrack == true) "In linea col piano" else "Più lento del piano",
                             style = TextStyle(color = WC.ink, fontSize = 12.sp, fontWeight = FontWeight.Medium),
                             modifier = GlanceModifier.defaultWeight(),
                         )
                         Text(
                             buildString {
                                 d.remaining?.let { append("${Fmt.signedKg(it)} kg a ${Fmt.kg(d.goalKg)}") }
-                                d.eta?.let { append(" · ${Fmt.eta(it)}") }
+                                d.eta?.let { append(" · ${Fmt.etaShort(it)}") }
                             },
                             style = TextStyle(color = WC.ink2, fontSize = 12.sp),
                         )
