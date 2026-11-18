@@ -16,6 +16,8 @@ import it.mithril.app.domain.Trim
 import it.mithril.app.widget.formatSteps
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
+import it.mithril.app.ui.weight.scrubDayForX
+import it.mithril.app.ui.weight.scrubValueAt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -237,5 +239,47 @@ class DomainTest {
         assertNull(v.copy(durationSec = null, endSec = null).playSec)
         assertEquals(1425, v.copy(durationSec = null).playSec) // la fine basta anche senza durata
         assertEquals(1425 + 1467, Sessions.totalSec(listOf(v, v.copy(endSec = null))))
+    }
+
+    @Test fun weightChartScrubResolvesPastDotsAndProjection() {
+        val today = friday.toEpochDay()
+        val weighIns = listOf(today - 20 to 86.0, today - 10 to 85.4, today to 84.8)
+        val trend = Trend.of(weighIns, today)
+        val now = trend.at(today)!!
+        val proj = trend.projection(today, 30, 80.0)!!
+        // Vista larga (1A): aggancia il puntino vicino entro la soglia.
+        val snapped = scrubDayForX(
+            xPx = 145f,
+            plotWidthPx = 300f,
+            from = today - 365,
+            to = today + 365,
+            today = today,
+            minDay = today - 20,
+            maxDay = today + proj.days,
+            weighInDays = weighIns.map { it.first },
+            snapRadiusPx = 18f,
+            denseCutoffPx = 10f,
+        )
+        assertEquals(today - 10, snapped)
+        val pastVal = scrubValueAt(today - 10, trend, today, now, proj)!!
+        assertFalse(pastVal.second)
+        assertEquals(trend.at(today - 10)!!, pastVal.first, 1e-9)
+        // Proiezione futura oltre oggi.
+        val futureDay = scrubDayForX(
+            xPx = 225f,
+            plotWidthPx = 300f,
+            from = today - 30,
+            to = today + 30,
+            today = today,
+            minDay = today - 20,
+            maxDay = today + proj.days,
+            weighInDays = weighIns.map { it.first },
+            snapRadiusPx = 18f,
+            denseCutoffPx = 10f,
+        )
+        assertEquals(today + 15, futureDay)
+        val futureVal = scrubValueAt(futureDay, trend, today, now, proj)!!
+        assertTrue(futureVal.second)
+        assertEquals(now + proj.slopePerDay * 15, futureVal.first, 1e-9)
     }
 }

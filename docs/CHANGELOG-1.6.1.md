@@ -1,0 +1,2 @@
+- **Scrubbing sul grafico del peso**: trascinando il dito lungo il grafico (o toccando un punto) vedi in alto la data, il valore del trend e l'eventuale pesata di quel giorno; trascinando oltre oggi vedi la stima lungo la proiezione.
+- **Barra della card Obiettivo corretta**: la barra del progresso nella schermata Peso (e le altre barre animate dell'app) ora si riempie correttamente con l'avanzamento verso il traguardo, allineandosi al widget.

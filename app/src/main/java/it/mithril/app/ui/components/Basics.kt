@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -312,6 +313,7 @@ fun GrowBar(fraction: Float, modifier: Modifier = Modifier, height: Dp = 10.dp, 
     Box(modifier.height(height).clip(RoundedCornerShape(height / 2)).background(track)) {
         Box(
             Modifier
+                .fillMaxHeight()
                 .matchParentSizeFraction(f * grow.value)
                 .clip(RoundedCornerShape(height / 2))
                 .background(fill)
@@ -322,7 +324,8 @@ fun GrowBar(fraction: Float, modifier: Modifier = Modifier, height: Dp = 10.dp, 
 private fun Modifier.matchParentSizeFraction(f: Float): Modifier = this.then(
     Modifier.layout { measurable, constraints ->
         val w = (constraints.maxWidth * f).toInt().coerceAtLeast(0)
-        val p = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
+        val h = if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
+        val p = measurable.measure(constraints.copy(minWidth = w, maxWidth = w, minHeight = h))
         layout(constraints.maxWidth, constraints.maxHeight) { p.place(0, 0) }
     }
 )

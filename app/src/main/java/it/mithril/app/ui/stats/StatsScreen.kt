@@ -159,9 +159,9 @@ fun StatsScreen() {
             if (weights.size >= Trend.MIN_WEIGH_INS) {
                 Card(Modifier.rise(4, epoch).fillMaxWidth(), padding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 16.dp)) {
                     CardHeader("Peso", s.trendChange?.let { "trend ${Fmt.signedKg(it)} kg nel periodo" })
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(4.dp))
                     val range = when (period) { StatsPeriod.W4 -> Range.M1; StatsPeriod.M3 -> Range.M3; else -> Range.Y1 }
-                    WeightChart(trend, today, range, settings.goalKg, Modifier.fillMaxWidth().height(170.dp), forecast = false)
+                    WeightChart(trend, today, range, settings.goalKg, Modifier.fillMaxWidth().height(190.dp), forecast = false)
                     Spacer(Modifier.height(10.dp))
                     TextLink("Dettagli nella scheda Peso", { nav.select(Tab.WEIGHT) })
                 }
