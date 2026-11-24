@@ -33,8 +33,8 @@ object Sessions {
     fun title(videos: List<VideoEntity>, short: Boolean = false): String =
         videos.joinToString(" + ") { if (short) shortTitle(it.title) else it.title }.ifBlank { "Sessione" }
 
-    /** Prossima sessione non ancora fatta: oggi (se l'ora non è passata da troppo) o nei giorni seguenti. */
-    fun next(slots: List<SlotEntity>, logs: List<SessionLogEntity>, today: LocalDate, nowMin: Int, includeToday: Boolean = true): SlotEntity? {
+    /** Prossima sessione non ancora fatta: oggi (se non ci sono già sessioni registrate oggi) o nei giorni seguenti. */
+    fun next(slots: List<SlotEntity>, logs: List<SessionLogEntity>, today: LocalDate, includeToday: Boolean = true): SlotEntity? {
         val t = today.toEpochDay()
         val doneSlots = logs.mapNotNull { it.slotId }.toSet()
         val loggedToday = logs.any { it.date == t }

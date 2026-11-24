@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -82,9 +83,11 @@ object Updates {
     /** Controllo automatico all'avvio, al massimo ogni 6 ore e mai sulle build debug. */
     suspend fun autoCheck(context: Context) {
         if (BuildConfig.DEBUG) return
+        val cur = _state.value
+        if (cur is UpdateState.Ready || cur is UpdateState.Downloading || cur is UpdateState.Checking) return
         val repo = Repo.get(context)
         val now = System.currentTimeMillis()
-        if (now - repo.settings.now().lastUpdateCheck < AUTO_INTERVAL && _state.value !is UpdateState.Idle) return
+        if (now - repo.settings.now().lastUpdateCheck < AUTO_INTERVAL) return
         check(context, quiet = true)
     }
 
@@ -95,7 +98,13 @@ object Updates {
             require(!BuildConfig.DEBUG) { "Gli aggiornamenti funzionano solo sulla versione release." }
             val info = fetchManifest()
             Repo.get(context).settings.setLastUpdateCheck(System.currentTimeMillis())
-            if (info.versionCode > BuildConfig.VERSION_CODE && info.minSdk <= Build.VERSION.SDK_INT) UpdateState.Available(info) else UpdateState.UpToDate
+            if (info.versionCode > BuildConfig.VERSION_CODE && info.minSdk <= Build.VERSION.SDK_INT) UpdateState.Available(info)
+            else {
+                runCatching { File(context.cacheDir, "updates/update.apk").delete() }
+                UpdateState.UpToDate
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (quiet) UpdateState.Idle else UpdateState.Failed(e.message ?: "Controllo non riuscito.")
         }
@@ -106,6 +115,8 @@ object Updates {
         _state.value = try {
             val file = downloadApk(context, info) { p -> _state.value = UpdateState.Downloading(info, p) }
             UpdateState.Ready(info, file)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             UpdateState.Failed(e.message ?: "Download non riuscito.", info)
         }

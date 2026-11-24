@@ -97,6 +97,7 @@ private fun TrimEditor(v: VideoEntity) {
     val changed = start != v.startSec || end != v.endSec
     var scrub by remember { mutableStateOf<Float?>(null) }
     var unavailable by remember { mutableStateOf<String?>(null) }
+    var leaving by remember { mutableStateOf(false) }
 
     val yt = remember { YouTubePlayerState() }
     var web by remember { mutableStateOf<WebView?>(null) }
@@ -111,7 +112,7 @@ private fun TrimEditor(v: VideoEntity) {
             if (LocalVideos.readable(context, uri)) local.load(uri, v.startSec.toFloat()) else unavailable = "File non trovato sul telefono"
         } else web = createYouTubeWebView(context, v.youtubeId, yt, v.startSec.toFloat())
     }
-    LaunchedEffect(Unit) { while (true) { delay(250); if (v.isLocal) local.tick() } }
+    if (v.isLocal) LaunchedEffect(Unit) { while (true) { delay(250); local.tick() } }
     LaunchedEffect(engine.duration) { engine.duration.toInt().let { if (it > 0) repo.learnDuration(v.id, it) } }
     LaunchedEffect(yt.error) {
         val e = yt.error ?: return@LaunchedEffect
@@ -121,9 +122,16 @@ private fun TrimEditor(v: VideoEntity) {
 
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val currentWeb by rememberUpdatedState(web)
     DisposableEffect(Unit) {
         view.keepScreenOn = true
-        val obs = LifecycleEventObserver { _, ev -> if (ev == Lifecycle.Event.ON_PAUSE) engine.pause() }
+        val obs = LifecycleEventObserver { _, ev ->
+            when (ev) {
+                Lifecycle.Event.ON_PAUSE -> { engine.pause(); currentWeb?.onPause() }
+                Lifecycle.Event.ON_RESUME -> currentWeb?.onResume()
+                else -> {}
+            }
+        }
         lifecycle.addObserver(obs)
         onDispose {
             view.keepScreenOn = false
@@ -134,12 +142,16 @@ private fun TrimEditor(v: VideoEntity) {
         }
     }
 
-    fun seek(sec: Float) = engine.seek(sec.coerceIn(0f, duration.takeIf { it > 0f } ?: sec))
+    fun seek(sec: Float) {
+        val clamped = sec.coerceAtLeast(0f).let { if (duration > 0f) it.coerceAtMost(duration) else it }
+        engine.seek(clamped)
+    }
     fun save() {
         val s = start; val e = Trim.end(end, duration.toInt())
         repo.scope.launch { repo.setTrim(v.id, s, e) }
     }
     fun leave() {
+        leaving = true
         engine.pause()
         if (changed) toast.show("Inizio e fine non salvati", "Salva") { save(); toast.show("Inizio e fine salvati") }
         nav.pop()
@@ -173,7 +185,7 @@ private fun TrimEditor(v: VideoEntity) {
                     modifier = Modifier.aspectRatio(local.aspect, matchHeightConstraintsFirst = local.aspect < 16f / 9f),
                 )
             }
-            web?.let { NativeHost(it, visible = unavailable == null, modifier = Modifier.fillMaxSize()) }
+            web?.let { NativeHost(it, visible = unavailable == null && !leaving, modifier = Modifier.fillMaxSize()) }
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(14.dp))
@@ -223,6 +235,7 @@ private fun TrimEditor(v: VideoEntity) {
         }
         PrimaryButton(
             "Salva", {
+                leaving = true
                 save()
                 toast.show(if (start > 0 || end != null) "Inizio e fine salvati" else "Il video si guarda tutto")
                 engine.pause(); nav.pop()
@@ -259,7 +272,7 @@ private fun Timeline(duration: Float, position: Float, start: Float, end: Float,
             val h = 6.dp.toPx()
             fun x(sec: Float) = (sec / duration).coerceIn(0f, 1f) * size.width
             drawRoundRect(PlayerInk.copy(alpha = 0.15f), Offset(0f, cy - h / 2), Size(size.width, h), CornerRadius(h / 2))
-            drawRoundRect(accent.copy(alpha = 0.55f), Offset(x(start), cy - h / 2), Size(x(end) - x(start), h), CornerRadius(h / 2))
+            drawRoundRect(accent.copy(alpha = 0.55f), Offset(x(start), cy - h / 2), Size((x(end) - x(start)).coerceAtLeast(0f), h), CornerRadius(h / 2))
             val mw = 3.dp.toPx(); val mh = 20.dp.toPx()
             listOf(start, end).forEach { drawRoundRect(accent, Offset(x(it) - mw / 2, cy - mh / 2), Size(mw, mh), CornerRadius(mw / 2)) }
             drawCircle(PlayerInk, 8.dp.toPx(), Offset(x(position), cy))

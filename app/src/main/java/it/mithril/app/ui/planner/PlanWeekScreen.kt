@@ -80,6 +80,7 @@ import java.time.LocalDate
 import kotlin.math.roundToInt
 import it.mithril.app.data.SlotEntity
 import it.mithril.app.domain.Fmt
+import it.mithril.app.domain.ObstacleInsights
 import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
@@ -91,6 +92,7 @@ import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.Card
 import it.mithril.app.ui.components.GrowBar
+import it.mithril.app.ui.components.Hint
 import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.NumberBadge
 import it.mithril.app.ui.components.OutlineButton
@@ -120,14 +122,17 @@ fun PlanWeekScreen(start: LocalDate) {
     val logs by repo.logs.collectAsStateWithLifecycle()
     val videos by repo.videos.collectAsStateWithLifecycle()
     val weights by repo.weights.collectAsStateWithLifecycle()
+    val plans by repo.weekPlans.collectAsStateWithLifecycle()
+    val reviews by repo.reviews.collectAsStateWithLifecycle()
     val settings by repo.appSettings.collectAsStateWithLifecycle()
     val steps by Health.state.collectAsStateWithLifecycle()
     val all = videos ?: emptyList()
     val prev = start.minusWeeks(1)
-    val goals = remember { repo.goals() }
-    val prevSummary = remember(slots, logs) { Week.summary(prev, today, slots, logs, Week.goalFor(prev, goals)) }
+    val goals = remember(plans) { plans.associate { it.weekStart to it.goalSessions } }
+    val prevSummary = remember(slots, logs, goals) { Week.summary(prev, today, slots, logs, Week.goalFor(prev, goals)) }
+    val obstacleTip = remember(reviews, today) { ObstacleInsights.forPlanner(reviews, today) }
     var step by remember { mutableIntStateOf(0) }
-    var goal by remember { mutableIntStateOf(Week.goalFor(start, goals)) }
+    var goal by remember(start, goals) { mutableIntStateOf(Week.goalFor(start, goals)) }
     val plan = remember { mutableStateMapOf<Int, DayPlan>() }
     var loaded by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<Long?>(null) }
@@ -196,6 +201,10 @@ fun PlanWeekScreen(start: LocalDate) {
                                 else "Tocca un video e poi i giorni in cui farlo. Puoi anche trascinarlo su un giorno.",
                                 style = T.body, color = M.c.ink2,
                             )
+                            if (obstacleTip != null) {
+                                Spacer(Modifier.height(12.dp))
+                                Hint(obstacleTip.body, Modifier.fillMaxWidth(), icon = "insights", bg = M.c.accentSoft, fg = M.c.accentInk)
+                            }
                             Spacer(Modifier.height(16.dp))
                             if (all.isEmpty()) Text("La Libreria è vuota: salva prima qualche video da YouTube.", style = T.body14, color = M.c.ink3)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -275,6 +284,8 @@ fun PlanWeekScreen(start: LocalDate) {
                                     ) {
                                         Row(verticalAlignment = Alignment.Bottom) {
                                             Text(Fmt.dayName(day.dayOfWeek), style = ts(15, FontWeight.Bold), color = if (past) M.c.ink3 else M.c.ink, modifier = Modifier.weight(1f))
+                                            val hint = if (!past) ObstacleInsights.dayHint(reviews, day.dayOfWeek, today) else null
+                                            if (hint != null) Text(hint, style = T.caption, color = M.c.accentInk, modifier = Modifier.padding(end = 8.dp))
                                             Text(Fmt.dateShort(day), style = T.caption, color = M.c.ink2)
                                         }
                                         val ids = if (past) slots.filter { it.date == day.toEpochDay() }.flatMap { it.videoIdList } else p?.videos ?: emptyList()
@@ -336,15 +347,14 @@ fun PlanWeekScreen(start: LocalDate) {
                     if (step == 3) "Conferma" else "Avanti",
                     {
                         if (step < 3) step++
-                        else scope.launch {
+                        else {
                             val newSlots = (firstEditable..6).mapNotNull { i ->
                                 val p = plan[i] ?: return@mapNotNull null
                                 if (p.videos.isEmpty()) null
                                 else SlotEntity(0, start.plusDays(i.toLong()).toEpochDay(), p.time, p.place, p.videos.joinToString(","))
                             }
                             val from = start.plusDays(firstEditable.toLong())
-                            repo.dao.replaceWeekSlots(from.toEpochDay(), start.toEpochDay() + 6, newSlots)
-                            repo.setWeekGoal(start, goal)
+                            repo.scope.launch { repo.replaceWeekRange(start, from, newSlots, goal) }
                             if (Build.VERSION.SDK_INT >= 33 && !Reminders.canNotify(context)) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             toast.show("Settimana pianificata · ${if (count == 1) "1 sessione" else "$count sessioni"}")
                             nav.pop()

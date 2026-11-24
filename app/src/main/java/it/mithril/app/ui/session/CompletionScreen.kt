@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,7 +38,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,16 +78,17 @@ import it.mithril.app.ui.theme.T
 fun CompletionScreen(d: Dest.Completion) {
     val repo = rememberRepo()
     val nav = LocalNav.current
-    val scope = rememberCoroutineScope()
     val c = M.c
     val motion = M.motion
     val today by repo.today.collectAsStateWithLifecycle()
     val slots by repo.slots.collectAsStateWithLifecycle()
     val logs by repo.logs.collectAsStateWithLifecycle()
+    val plans by repo.weekPlans.collectAsStateWithLifecycle()
     val all by repo.videos.collectAsStateWithLifecycle()
     val videos = Sessions.videosOf(d.req.videoIds, all ?: emptyList())
     val start = Week.start(today)
-    val summary = remember(slots, logs, today) { Week.summary(start, today, slots, logs, repo.weekGoal(start)) }
+    val goals = remember(plans) { plans.associate { it.weekStart to it.goalSessions } }
+    val summary = remember(slots, logs, today, goals) { Week.summary(start, today, slots, logs, Week.goalFor(start, goals)) }
     var fatigue by rememberSaveable { mutableIntStateOf(6) }
     var note by rememberSaveable { mutableStateOf("") }
 
@@ -103,7 +104,9 @@ fun CompletionScreen(d: Dest.Completion) {
         launch { delay(400); ring.animateTo(1f, tween(1200)) }
     }
     val finish: () -> Unit = {
-        scope.launch { repo.finishLog(d.logId, fatigue, note) }
+        val f = fatigue
+        val n = note
+        repo.scope.launch { repo.finishLog(d.logId, f, n) }
         nav.popToRoot(); nav.select(Tab.TODAY)
     }
     BackHandler(onBack = finish)
@@ -120,7 +123,7 @@ fun CompletionScreen(d: Dest.Completion) {
             .background(c.hero)
     ) {
         Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(48.dp))

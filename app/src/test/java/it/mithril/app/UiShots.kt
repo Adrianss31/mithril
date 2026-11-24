@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
+import it.mithril.app.data.NutritionDayEntity
 import it.mithril.app.data.Repo
 import it.mithril.app.data.SessionLogEntity
 import it.mithril.app.data.SlotEntity
@@ -82,6 +83,11 @@ abstract class ShotBase {
             dao.upsertWeight(WeightEntity(d.toEpochDay(), Math.round(kg * 10) / 10.0))
         }
         repo.settings.setGoal(82.0, 87.0, today.minusDays(90).toEpochDay())
+        val nutrRows = (0..30).map { i ->
+            val d = today.minusDays(i.toLong()).toEpochDay()
+            NutritionDayEntity(d, 1850 + (i % 5) * 90, 130f, 185f, 58f)
+        }
+        dao.upsertNutritionDays(nutrRows)
         // Aspetta che i flussi di Room arrivino.
         repeat(100) {
             if (repo.videos.value?.size == v.size && repo.weights.value?.isNotEmpty() == true && repo.slots.value.isNotEmpty()) return@runBlocking
@@ -241,4 +247,8 @@ class WeightYoungShot : ShotBase() {
 
 class SettingsShot : ShotBase() {
     @Test fun settings() { seed(); shot("14_impostazioni") { it.push(Dest.Settings) } }
+}
+
+class CaloriesShot : ShotBase() {
+    @Test fun calories() { seed(); shot("15_calorie") { it.push(Dest.Calories) } }
 }

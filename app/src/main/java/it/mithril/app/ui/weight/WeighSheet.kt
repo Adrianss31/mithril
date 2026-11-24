@@ -27,7 +27,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,7 +58,6 @@ import it.mithril.app.ui.theme.T
 fun ColumnScope.WeighSheet(s: SheetKind.Weigh, onDone: () -> Unit) {
     val repo = rememberRepo()
     val toast = LocalToast.current
-    val scope = rememberCoroutineScope()
     val weights by repo.weights.collectAsStateWithLifecycle()
     val list = weights ?: emptyList()
     val date = s.editDate ?: LocalDate.now()
@@ -84,10 +83,8 @@ fun ColumnScope.WeighSheet(s: SheetKind.Weigh, onDone: () -> Unit) {
     Spacer(Modifier.height(22.dp))
     PrimaryButton("Salva", {
         val kg = tenths / 10.0
-        scope.launch {
-            repo.saveWeight(date, kg)
-            toast.show("Pesata salvata · ${Fmt.kg(kg)} kg")
-        }
+        repo.scope.launch { repo.saveWeight(date, kg) }
+        toast.show("Pesata salvata · ${Fmt.kg(kg)} kg")
         onDone()
     }, Modifier.fillMaxWidth(), height = 56.dp)
 }
@@ -99,15 +96,20 @@ fun WeightWheel(tenths: Int, onChange: (Int) -> Unit, stepper: Dp = 56.dp, big: 
     val density = LocalDensity.current
     var acc by remember { mutableFloatStateOf(0f) }
     val stepPx = with(density) { 18.dp.toPx() }
-    fun set(v: Int) { if (v != tenths) { onChange(v); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
+    val currentTenths by rememberUpdatedState(tenths)
+    val currentOnChange by rememberUpdatedState(onChange)
+    fun set(v: Int) { if (v != currentTenths) { currentOnChange(v); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        RoundIconButton("remove", { set(tenths - 1) }, size = stepper, iconSize = 26.dp, contentDescription = "−0,1 kg")
+        RoundIconButton("remove", { set(currentTenths - 1) }, size = stepper, iconSize = 26.dp, contentDescription = "−0,1 kg")
         Column(
             Modifier.weight(1f).draggable(
                 rememberDraggableState { d ->
                     acc += d
-                    while (acc > stepPx) { acc -= stepPx; set(tenths - 1) }
-                    while (acc < -stepPx) { acc += stepPx; set(tenths + 1) }
+                    val steps = (acc / stepPx).toInt()
+                    if (steps != 0) {
+                        acc -= steps * stepPx
+                        set(currentTenths - steps)
+                    }
                 },
                 Orientation.Vertical,
                 onDragStopped = { acc = 0f },
@@ -141,7 +143,6 @@ fun WeightWheel(tenths: Int, onChange: (Int) -> Unit, stepper: Dp = 56.dp, big: 
                 Text(Fmt.kg((tenths - 2) / 10.0), style = ts(20, FontWeight.Medium), color = M.c.ink3.copy(alpha = 0.5f))
             }
         }
-        RoundIconButton("add", { set(tenths + 1) }, size = stepper, iconSize = 26.dp, contentDescription = "+0,1 kg")
+        RoundIconButton("add", { set(currentTenths + 1) }, size = stepper, iconSize = 26.dp, contentDescription = "+0,1 kg")
     }
-    Box(Modifier.width(0.dp))
 }

@@ -54,6 +54,7 @@ object Cast {
     private var router: MediaRouter? = null
     private var selector: MediaRouteSelector? = null
     private var server: LocalMediaServer? = null
+    private var discoveryRefs = 0
     val engine = CastEngine()
 
     private val routerCallback = object : MediaRouter.Callback() {
@@ -89,11 +90,15 @@ object Cast {
 
     fun startDiscovery() {
         val r = router ?: return; val sel = selector ?: return
-        r.addCallback(sel, routerCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
+        discoveryRefs++
+        if (discoveryRefs == 1) r.addCallback(sel, routerCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
         refreshRoutes()
     }
 
-    fun stopDiscovery() { router?.removeCallback(routerCallback) }
+    fun stopDiscovery() {
+        if (discoveryRefs > 0) discoveryRefs--
+        if (discoveryRefs == 0) router?.removeCallback(routerCallback)
+    }
 
     private fun refreshRoutes() {
         val r = router ?: return; val sel = selector ?: return
@@ -132,6 +137,11 @@ object Cast {
         disconnected()
     }
 
+    fun stopMedia() {
+        server?.stop(); server = null
+        engine.stop()
+    }
+
     private fun connected(s: CastSession) {
         _state.value = _state.value.copy(connecting = false, connectedTo = s.castDevice?.friendlyName ?: "TV")
         engine.attach(s.remoteMediaClient)
@@ -167,6 +177,8 @@ class CastEngine : MediaEngine {
         private set
     override var duration by mutableFloatStateOf(0f)
         private set
+    var error by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
     override var onEnded: (() -> Unit)? = null
     private var client: RemoteMediaClient? = null
     private var loaded = false
@@ -181,7 +193,7 @@ class CastEngine : MediaEngine {
         c?.registerCallback(callback)
     }
 
-    internal fun reset(startSec: Float) { state = 3; position = startSec; duration = 0f; loaded = false }
+    internal fun reset(startSec: Float) { state = 3; position = startSec; duration = 0f; error = null; loaded = false }
 
     /** Da chiamare periodicamente: la posizione remota non arriva da sola. */
     fun tick() {
@@ -198,10 +210,15 @@ class CastEngine : MediaEngine {
             MediaStatus.PLAYER_STATE_PLAYING -> { loaded = true; 1 }
             MediaStatus.PLAYER_STATE_PAUSED -> 2
             MediaStatus.PLAYER_STATE_BUFFERING, MediaStatus.PLAYER_STATE_LOADING -> 3
-            MediaStatus.PLAYER_STATE_IDLE ->
-                if (loaded && c.idleReason == MediaStatus.IDLE_REASON_FINISHED) {
+            MediaStatus.PLAYER_STATE_IDLE -> when {
+                loaded && c.idleReason == MediaStatus.IDLE_REASON_FINISHED -> {
                     loaded = false; state = 0; onEnded?.invoke(); 0
-                } else state
+                }
+                loaded && (c.idleReason == MediaStatus.IDLE_REASON_ERROR || c.idleReason == MediaStatus.IDLE_REASON_INTERRUPTED) -> {
+                    loaded = false; error = "Trasmissione alla TV interrotta"; 2
+                }
+                else -> state
+            }
             else -> state
         }
     }

@@ -2,6 +2,7 @@ package it.mithril.app.ui.weight
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,46 +12,46 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import it.mithril.app.ui.rememberRepo
-import it.mithril.app.ui.statusBarTop
-import it.mithril.app.ui.theme.rise
-import it.mithril.app.ui.theme.ts
-import kotlinx.coroutines.launch
-import java.time.LocalDate
 import it.mithril.app.data.WeightEntity
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
 import it.mithril.app.domain.GoalStatus
+import it.mithril.app.domain.Milestones
+import it.mithril.app.domain.Nutrition
 import it.mithril.app.domain.Trend
+import it.mithril.app.domain.Week
+import it.mithril.app.domain.toDomain
+import it.mithril.app.health.Health
 import it.mithril.app.ui.BottomGap
 import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
@@ -62,12 +63,19 @@ import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.Overline
 import it.mithril.app.ui.components.PrimaryButton
 import it.mithril.app.ui.components.RoundIconButton
+import it.mithril.app.ui.components.SmallChip
 import it.mithril.app.ui.components.StatValue
 import it.mithril.app.ui.components.Symbol
 import it.mithril.app.ui.components.TextLink
 import it.mithril.app.ui.components.TonalButton
+import it.mithril.app.ui.rememberRepo
+import it.mithril.app.ui.statusBarTop
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.T
+import it.mithril.app.ui.theme.rise
+import it.mithril.app.ui.theme.ts
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @Composable
 fun WeightScreen() {
@@ -75,13 +83,29 @@ fun WeightScreen() {
     val nav = LocalNav.current
     val today by repo.today.collectAsStateWithLifecycle()
     val weightsOrNull by repo.weights.collectAsStateWithLifecycle()
+    val slots by repo.slots.collectAsStateWithLifecycle()
+    val logs by repo.logs.collectAsStateWithLifecycle()
+    val plans by repo.weekPlans.collectAsStateWithLifecycle()
+    val nutrition by repo.nutrition.collectAsStateWithLifecycle()
     val settings by repo.appSettings.collectAsStateWithLifecycle()
+    val health by Health.state.collectAsStateWithLifecycle()
     val weights = weightsOrNull ?: emptyList()
     val pairs = remember(weights) { weights.map { it.date to it.kg } }
     val trend = remember(pairs, today) { Trend.of(pairs, today.toEpochDay()) }
     var range by rememberSaveable { mutableStateOf(Range.M3) }
     val enough = weights.size >= Trend.MIN_WEIGH_INS
     val epoch = nav.tabEpoch
+
+    val goals = remember(plans) { plans.associate { it.weekStart to it.goalSessions } }
+    val recentActiveWeeks = remember(today, slots, logs, goals) {
+        val lastClosed = Week.start(today).minusWeeks(1)
+        val w1 = Week.summary(lastClosed, today, slots, logs, Week.goalFor(lastClosed, goals)).active
+        val w2 = Week.summary(lastClosed.minusWeeks(1), today, slots, logs, Week.goalFor(lastClosed.minusWeeks(1), goals)).active
+        if (w1 && w2) 2 else if (w1) 1 else 0
+    }
+    val calSummary = remember(nutrition, today, settings.caloriesGoal) {
+        Nutrition.summarize(nutrition.map { it.toDomain() }, today.minusDays(7), today, settings.caloriesGoal)
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = statusBarTop() + 14.dp)) {
         Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -115,12 +139,35 @@ fun WeightScreen() {
                 else -> TrendCard(trend, today, range, settings.goalKg, Modifier.rise(0, epoch)) { range = it }
             }
             if (enough) {
-                GoalCard(trend, today, settings.goalKg, settings.weeklyRateKg, settings.goalStartKg, Modifier.rise(1, epoch))
+                GoalCard(trend, today, settings.goalKg, settings.weeklyRateKg, settings.goalStartKg, recentActiveWeeks, Modifier.rise(1, epoch))
             } else if (weights.isNotEmpty() && settings.goalKg == null) {
-                GoalCard(trend, today, null, settings.weeklyRateKg, null, Modifier.rise(1, epoch))
+                GoalCard(trend, today, null, settings.weeklyRateKg, null, recentActiveWeeks, Modifier.rise(1, epoch))
             }
-            if (weights.isNotEmpty()) WeighInsCard(weights.reversed().take(10), weights.size, Modifier.rise(2, epoch))
+            CaloriesLinkCard(health.nutritionGranted, calSummary.avgKcal, settings.caloriesGoal, Modifier.rise(2, epoch)) { nav.push(Dest.Calories) }
+            if (weights.isNotEmpty()) WeighInsCard(weights.reversed().take(10), weights.size, Modifier.rise(3, epoch))
             Spacer(Modifier.height(BottomGap))
+        }
+    }
+}
+
+@Composable
+private fun CaloriesLinkCard(granted: Boolean, weekAvgKcal: Int?, goalKcal: Int, modifier: Modifier, onClick: () -> Unit) {
+    Card(modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(16.dp), onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Symbol("local_fire_department", 22.dp, M.c.accent, filled = true)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Calorie (MyFitnessPal)", style = T.title15, color = M.c.ink)
+                Text(
+                    when {
+                        weekAvgKcal != null -> "Media ultimi 7 gg: ${Fmt.thousands(weekAvgKcal)} / ${Fmt.thousands(goalKcal)} kcal"
+                        granted -> "Nessuna giornata tracciata negli ultimi 7 giorni"
+                        else -> "Collega Health Connect per vedere bilancio e fabbisogno"
+                    },
+                    style = T.secondary, color = M.c.ink2,
+                )
+            }
+            Symbol("chevron_right", 22.dp, M.c.ink2)
         }
     }
 }
@@ -204,7 +251,15 @@ private fun Legend() {
 }
 
 @Composable
-private fun GoalCard(trend: Trend, today: LocalDate, goalKg: Double?, rate: Double, startKg: Double?, modifier: Modifier) {
+private fun GoalCard(
+    trend: Trend,
+    today: LocalDate,
+    goalKg: Double?,
+    rate: Double,
+    startKg: Double?,
+    recentActiveWeeks: Int,
+    modifier: Modifier,
+) {
     val nav = LocalNav.current
     Card(modifier.fillMaxWidth(), radius = 22.dp, padding = PaddingValues(16.dp), onClick = { nav.push(Dest.Settings) }) {
         if (goalKg == null) {
@@ -242,19 +297,47 @@ private fun GoalCard(trend: Trend, today: LocalDate, goalKg: Double?, rate: Doub
             Text("${Fmt.kg(status.doneKg)} kg fatti", style = T.caption, color = M.c.ink2, modifier = Modifier.weight(1f))
             Text("${Fmt.kg(status.remainingKg)} kg da fare", style = T.caption, color = M.c.ink2)
         }
+        val backpack = Milestones.backpackEquivalent(status.doneKg)
+        if (backpack != null && status.direction < 0) {
+            Spacer(Modifier.height(4.dp))
+            Text("È come $backpack che non porti più sulle scale.", style = T.caption, color = M.c.ink3)
+        }
+        val milestone = if (status.remainingKg > 0.0) Milestones.forTrend(trend, today, goalKg, startKg) else null
+        if (milestone != null) {
+            Spacer(Modifier.height(12.dp))
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(M.c.surface2).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                if (milestone.justCrossedKg != null) {
+                    SmallChip("Sfondati i ${Fmt.kg(milestone.justCrossedKg)} kg ✓")
+                    Spacer(Modifier.height(6.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (status.direction < 0) "Prossima tappa: sotto ${Fmt.kg(milestone.nextKg)} kg"
+                        else "Prossima tappa: sopra ${Fmt.kg(milestone.nextKg)} kg",
+                        style = T.captionBold, color = M.c.ink, modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "−${Fmt.kg(milestone.remainingKg)} kg" + (milestone.etaDays?.let { " · ~$it gg" } ?: ""),
+                        style = T.caption, color = M.c.ink2,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                GrowBar(milestone.progress, Modifier.fillMaxWidth(), height = 5.dp, track = M.c.surface, delayMs = 200)
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Divider(Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(if (status.onTrack) M.c.accent else M.c.ink3))
             Spacer(Modifier.width(10.dp))
-            Text(planLine(status, trend.weeklyRate(today.toEpochDay()), rate * status.direction), style = T.body14, color = M.c.ink, modifier = Modifier.weight(1f))
+            Text(planLine(status, trend.weeklyRate(today.toEpochDay()), rate * status.direction, recentActiveWeeks), style = T.body14, color = M.c.ink, modifier = Modifier.weight(1f))
         }
     }
 }
 
 /** Il ritmo attuale (lo stesso del grafico) confrontato col ritmo previsto in Impostazioni. */
-private fun planLine(s: GoalStatus, current: Double?, plan: Double): String {
+private fun planLine(s: GoalStatus, current: Double?, plan: Double, recentActiveWeeks: Int): String {
     val planTxt = Fmt.signedRate(plan)
     val cur = current?.let { Fmt.signedRate(it) }
     return when {
@@ -262,6 +345,7 @@ private fun planLine(s: GoalStatus, current: Double?, plan: Double): String {
         cur == null -> "Il ritmo compare dopo una settimana di trend. Piano: $planTxt kg a settimana."
         s.onTrack -> "In linea col piano: $cur kg a settimana (previsti $planTxt)."
         s.weeklyTowards != null && s.weeklyTowards < -Trend.STABLE_SLOPE * 7 -> "Il trend si allontana dall'obiettivo: $cur kg a settimana (previsti $planTxt)."
+        s.stable && recentActiveWeeks >= 2 -> "Trend fermo, ma $recentActiveWeeks settimane attive di fila: i plateau sono normali mentre ti alleni."
         s.stable -> "Trend fermo: il piano prevede $planTxt kg a settimana."
         else -> "Più lento del piano: $cur kg a settimana (previsti $planTxt)."
     }
@@ -285,7 +369,6 @@ fun ColumnScope.WeighInRows(list: List<WeightEntity>) {
     val repo = rememberRepo()
     val nav = LocalNav.current
     val toast = LocalToast.current
-    val scope = rememberCoroutineScope()
     list.forEachIndexed { i, w ->
         if (i > 0) Divider(Modifier.fillMaxWidth().padding(end = 8.dp))
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -294,10 +377,8 @@ fun ColumnScope.WeighInRows(list: List<WeightEntity>) {
             Spacer(Modifier.width(8.dp))
             RoundIconButton("edit", { nav.sheet = SheetKind.Weigh(LocalDate.ofEpochDay(w.date)) }, size = 40.dp, iconSize = 20.dp, bg = M.c.surface, fg = M.c.ink2, contentDescription = "Modifica")
             RoundIconButton("delete", {
-                scope.launch {
-                    repo.deleteWeight(w.date)
-                    toast.show("Pesata eliminata", "Annulla") { scope.launch { repo.restoreWeight(w) } }
-                }
+                repo.scope.launch { repo.deleteWeight(w.date) }
+                toast.show("Pesata eliminata", "Annulla") { repo.scope.launch { repo.restoreWeight(w) } }
             }, size = 40.dp, iconSize = 20.dp, bg = M.c.surface, fg = M.c.ink2, contentDescription = "Elimina")
         }
     }
@@ -308,7 +389,7 @@ fun AllWeightsScreen() {
     val repo = rememberRepo()
     val nav = LocalNav.current
     val weights by repo.weights.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).padding(top = statusBarTop() + 6.dp, start = 12.dp, end = 16.dp, bottom = 24.dp)) {
+    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(top = statusBarTop() + 6.dp, start = 12.dp, end = 16.dp, bottom = 24.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton("arrow_back", { nav.pop() }, size = 44.dp, bg = M.c.bg, contentDescription = "Indietro")
             Text("Tutte le pesate", style = T.sheetTitle, color = M.c.ink)

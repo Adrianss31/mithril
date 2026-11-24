@@ -49,6 +49,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -80,7 +81,7 @@ fun <T : Any> Sheet(item: T?, onDismiss: () -> Unit, maxFraction: Float = 0.9f, 
     LaunchedEffect(item != null) { if (item != null) drag.snapTo(0f) }
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(state, enter = fadeIn(tween(if (motion) 300 else 0)), exit = fadeOut(tween(if (motion) 250 else 0))) {
-            Box(Modifier.fillMaxSize().background(M.c.scrim).clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
+            Box(Modifier.fillMaxSize().background(M.c.scrim).clickable(remember { MutableInteractionSource() }, null, onClickLabel = "Chiudi", onClick = onDismiss))
         }
         BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             val maxH = maxHeight * maxFraction
@@ -96,7 +97,7 @@ fun <T : Any> Sheet(item: T?, onDismiss: () -> Unit, maxFraction: Float = 0.9f, 
                         .heightIn(max = maxH)
                         .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                         .background(M.c.surface)
-                        .clickable(remember { MutableInteractionSource() }, null) {}
+                        .pointerInput(Unit) {}
                         .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 ) {
                     Box(

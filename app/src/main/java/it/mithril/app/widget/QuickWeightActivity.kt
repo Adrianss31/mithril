@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -36,9 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import it.mithril.app.ui.components.cardShadow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import it.mithril.app.data.Repo
 import it.mithril.app.domain.Fmt
@@ -62,6 +64,7 @@ class QuickWeightActivity : ComponentActivity() {
                 var loaded by remember { mutableStateOf(false) }
                 var editing by remember { mutableStateOf(false) }
                 var closing by remember { mutableStateOf(false) }
+                var saving by remember { mutableStateOf(false) }
                 val motion = M.motion
                 val scrim = remember { Animatable(if (motion) 0f else 1f) }
                 val card = remember { Animatable(if (motion) 0f else 1f) }
@@ -114,15 +117,19 @@ class QuickWeightActivity : ComponentActivity() {
                         Spacer(Modifier.height(20.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             TextLink("Annulla", { close() }, color = M.c.ink2)
-                            Spacer(Modifier.height(0.dp).padding(horizontal = 6.dp))
+                            Spacer(Modifier.width(12.dp))
                             PrimaryButton("Salva", {
+                                if (saving) return@PrimaryButton
+                                saving = true
                                 val kg = tenths / 10.0
-                                lifecycleScope.launch {
+                                repo.scope.launch {
                                     repo.saveWeight(LocalDate.now(), kg)
-                                    Toast.makeText(applicationContext, "Pesata salvata · ${Fmt.kg(kg)} kg", Toast.LENGTH_SHORT).show()
-                                    close()
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(applicationContext, "Pesata salvata · ${Fmt.kg(kg)} kg", Toast.LENGTH_SHORT).show()
+                                        close()
+                                    }
                                 }
-                            }, height = 48.dp, enabled = loaded)
+                            }, height = 48.dp, enabled = loaded && !saving)
                         }
                     }
                 }

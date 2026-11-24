@@ -36,10 +36,9 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import coil.ImageLoader
+import coil.Coil
 import coil.request.ImageRequest
 import java.time.LocalDate
-import java.time.LocalTime
 import it.mithril.app.MainActivity
 import it.mithril.app.R
 import it.mithril.app.data.Repo
@@ -50,6 +49,7 @@ import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Trend
 import it.mithril.app.ui.theme.DarkColors
 import it.mithril.app.ui.theme.LightColors
+import kotlin.math.abs
 
 internal object WC {
     val surface = ColorProvider(LightColors.surface, DarkColors.surface)
@@ -85,7 +85,10 @@ private data class WeightData(
     val goalKg: Double?,
     val progress: Float?,
     val onTrack: Boolean?,
-    val remaining: Double?,
+    val stable: Boolean?,
+    val away: Boolean,
+    val remainingSigned: Double?,
+    val remainingAbs: Double?,
     val eta: LocalDate?,
 )
 
@@ -95,11 +98,25 @@ private suspend fun loadWeight(context: Context): WeightData {
     val s = repo.settings.now()
     val today = LocalDate.now()
     val t = today.toEpochDay()
-    if (w.size < Trend.MIN_WEIGH_INS) return WeightData(w.lastOrNull()?.kg, false, null, s.goalKg, null, null, null, null)
+    if (w.size < Trend.MIN_WEIGH_INS) return WeightData(w.lastOrNull()?.kg, false, null, s.goalKg, null, null, null, false, null, null, null)
     val trend = Trend.of(w.map { it.date to it.kg }, t)
     val now = trend.at(t)
     val status = s.goalKg?.let { Goal.status(trend, today, it, s.weeklyRateKg, s.goalStartKg) }
-    return WeightData(now, true, trend.weeklyRate(t), s.goalKg, status?.progress, status?.onTrack, s.goalKg?.let { g -> now?.let { g - it } }, status?.eta)
+    val rate = trend.weeklyRate(t)
+    val away = status != null && status.weeklyTowards != null && status.weeklyTowards < -Trend.STABLE_SLOPE * 7
+    return WeightData(
+        value = now,
+        isTrend = true,
+        weekChange = rate,
+        goalKg = s.goalKg,
+        progress = status?.progress,
+        onTrack = status?.onTrack,
+        stable = status?.stable,
+        away = away,
+        remainingSigned = s.goalKg?.let { g -> now?.let { g - it } },
+        remainingAbs = status?.remainingKg,
+        eta = status?.eta,
+    )
 }
 
 class WeightWidget : GlanceAppWidget() {
@@ -143,16 +160,28 @@ class WeightWidget : GlanceAppWidget() {
                     LinearProgressIndicator(d.progress, GlanceModifier.fillMaxWidth().height(6.dp).cornerRadius(3.dp), color = WC.accent, backgroundColor = WC.surface2)
                     Spacer(GlanceModifier.height(8.dp))
                     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("● ", style = TextStyle(color = WC.accent, fontSize = 10.sp))
+                        val statusLabel = when {
+                            (d.remainingAbs ?: 1.0) <= 0.0 -> "Obiettivo raggiunto"
+                            d.weekChange == null -> "Ritmo tra poco"
+                            d.onTrack == true -> "In linea col piano"
+                            d.away -> "Si allontana dal piano"
+                            d.stable == true -> "Trend fermo"
+                            else -> "Più lento del piano"
+                        }
+                        val dotColor = if (d.onTrack == true || (d.remainingAbs ?: 1.0) <= 0.0) WC.accent else WC.ink3
+                        Text("● ", style = TextStyle(color = dotColor, fontSize = 10.sp))
                         Text(
-                            if (d.onTrack == true) "In linea col piano" else "Più lento del piano",
+                            statusLabel,
                             style = TextStyle(color = WC.ink, fontSize = 12.sp, fontWeight = FontWeight.Medium),
                             modifier = GlanceModifier.defaultWeight(),
                         )
                         Text(
                             buildString {
-                                d.remaining?.let { append("${Fmt.signedKg(it)} kg a ${Fmt.kg(d.goalKg)}") }
-                                d.eta?.let { append(" · ${Fmt.etaShort(it)}") }
+                                if ((d.remainingAbs ?: 1.0) <= 0.0) append("Obiettivo ${Fmt.kg(d.goalKg)}")
+                                else {
+                                    d.remainingSigned?.let { append("${Fmt.signedKg(it)} kg a ${Fmt.kg(d.goalKg)}") }
+                                    d.eta?.let { append(" · ${Fmt.etaShort(it)}") }
+                                }
                             },
                             style = TextStyle(color = WC.ink2, fontSize = 12.sp),
                         )
@@ -179,8 +208,7 @@ private suspend fun loadSession(context: Context): SessionData {
     val today = LocalDate.now()
     val logs = repo.dao.logsFrom(today.toEpochDay() - 1)
     val slots = repo.dao.slotsFrom(today.toEpochDay())
-    val now = LocalTime.now().let { it.hour * 60 + it.minute }
-    val slot = Sessions.next(slots, logs, today, now) ?: return SessionData(null, "Niente in programma", "Pianifica i prossimi giorni", null)
+    val slot = Sessions.next(slots, logs, today) ?: return SessionData(null, "Niente in programma", "Pianifica i prossimi giorni", null)
     val all = repo.dao.videosNow()
     val videos = Sessions.videosOf(slot.videoIdList, all)
     val day = LocalDate.ofEpochDay(slot.date)
@@ -192,7 +220,7 @@ private suspend fun loadSession(context: Context): SessionData {
     val thumb = videos.firstOrNull()?.thumbnailUrl?.let { url ->
         runCatching {
             val req = ImageRequest.Builder(context).data(url).size(216, 144).allowHardware(false).build()
-            (ImageLoader(context).execute(req).drawable as? BitmapDrawable)?.bitmap
+            (Coil.imageLoader(context).execute(req).drawable as? BitmapDrawable)?.bitmap
         }.getOrNull()
     }
     return SessionData(slot, Sessions.title(videos, short = true), "$prefix${Fmt.time(slot.timeMin)} · ${slot.place} · ${Fmt.minutes(Sessions.totalSec(videos))}", thumb)

@@ -20,6 +20,9 @@ data class AppSettings(
     val goalStartKg: Double? = null,
     val goalStartDate: Long? = null,
     val stepsGoal: Int = 7000,
+    val caloriesGoal: Int = 2000,
+    val proteinGoalG: Int? = null,
+    val nutritionSource: String? = null,
     val reminderLeadMin: Int = 30,
     val reviewReminder: Boolean = true,
     val reviewReminderMin: Int = 20 * 60,
@@ -39,6 +42,9 @@ class SettingsRepo(private val context: Context) {
         val startKg = doublePreferencesKey("goal_start_kg")
         val startDate = longPreferencesKey("goal_start_date")
         val steps = intPreferencesKey("steps_goal")
+        val calories = intPreferencesKey("calories_goal")
+        val protein = intPreferencesKey("protein_goal_g")
+        val nutritionSource = stringPreferencesKey("nutrition_source")
         val lead = intPreferencesKey("reminder_lead_min")
         val review = booleanPreferencesKey("review_reminder")
         val reviewMin = intPreferencesKey("review_reminder_min")
@@ -55,6 +61,9 @@ class SettingsRepo(private val context: Context) {
             goalStartKg = p[K.startKg],
             goalStartDate = p[K.startDate],
             stepsGoal = p[K.steps] ?: 7000,
+            caloriesGoal = p[K.calories] ?: 2000,
+            proteinGoalG = p[K.protein],
+            nutritionSource = p[K.nutritionSource],
             reminderLeadMin = p[K.lead] ?: 30,
             reviewReminder = p[K.review] ?: true,
             reviewReminderMin = p[K.reviewMin] ?: (20 * 60),
@@ -69,15 +78,23 @@ class SettingsRepo(private val context: Context) {
 
     /** Nuovo obiettivo: il peso iniziale della barra è il trend di oggi. */
     suspend fun setGoal(targetKg: Double?, startKg: Double?, startDate: Long) = context.store.edit { p ->
-        if (targetKg == null) { p.remove(K.goalKg); p.remove(K.startKg); p.remove(K.startDate) }
+        val clamped = targetKg?.coerceIn(20.0, 300.0)?.let { Math.round(it * 10) / 10.0 }
+        if (clamped == null) { p.remove(K.goalKg); p.remove(K.startKg); p.remove(K.startDate) }
         else {
-            p[K.goalKg] = targetKg
+            p[K.goalKg] = clamped
             if (startKg != null) p[K.startKg] = startKg else p.remove(K.startKg)
             p[K.startDate] = startDate
         }
     }
-    suspend fun setRate(v: Double) = context.store.edit { it[K.rate] = v }
-    suspend fun setStepsGoal(v: Int) = context.store.edit { it[K.steps] = v }
+    suspend fun setRate(v: Double) = context.store.edit { it[K.rate] = Math.round(v.coerceIn(0.05, 1.0) * 100) / 100.0 }
+    suspend fun setStepsGoal(v: Int) = context.store.edit { it[K.steps] = v.coerceIn(1000, 30000) }
+    suspend fun setCaloriesGoal(v: Int) = context.store.edit { it[K.calories] = v.coerceIn(1200, 4000) }
+    suspend fun setProteinGoal(v: Int?) = context.store.edit { p ->
+        if (v == null) p.remove(K.protein) else p[K.protein] = v.coerceIn(50, 300)
+    }
+    suspend fun setNutritionSource(pkg: String?) = context.store.edit { p ->
+        if (pkg.isNullOrBlank()) p.remove(K.nutritionSource) else p[K.nutritionSource] = pkg
+    }
     suspend fun setReminderLead(v: Int) = context.store.edit { it[K.lead] = v }
     suspend fun setReviewReminder(on: Boolean) = context.store.edit { it[K.review] = on }
     suspend fun setHealthAsked() = context.store.edit { it[K.healthAsked] = true }

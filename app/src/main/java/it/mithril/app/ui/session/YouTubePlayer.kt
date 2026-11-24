@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import it.mithril.app.data.YouTube
 
 /**
  * Player YouTube incorporato tramite IFrame Player API in una WebView.
@@ -35,8 +36,12 @@ class YouTubePlayerState : MediaEngine {
 
     override fun play() = js("cmd('play')")
     override fun pause() = js("cmd('pause')")
-    override fun seek(sec: Float) = js("cmd('seek',$sec)")
-    fun load(id: String, startSec: Float = 0f) { position = startSec; duration = 0f; error = null; state = -1; js("cmd('load','$id',${startSec.toInt()})") }
+    override fun seek(sec: Float) = js("cmd('seek',${sec.coerceAtLeast(0f)})")
+    fun load(id: String, startSec: Float = 0f) {
+        if (!YouTube.isValidId(id)) return
+        position = startSec; duration = 0f; error = null; state = -1
+        js("cmd('load','$id',${startSec.toInt().coerceAtLeast(0)})")
+    }
     private fun js(code: String) { web?.evaluateJavascript(code, null) }
 
     companion object {
@@ -48,6 +53,7 @@ class YouTubePlayerState : MediaEngine {
 
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayerState, startSec: Float = 0f): WebView {
+    val safeId = if (YouTube.isValidId(firstId)) firstId else ""
     val main = Handler(Looper.getMainLooper())
     return WebView(context).apply {
         setBackgroundColor(Color.BLACK)
@@ -68,7 +74,7 @@ fun createYouTubeWebView(context: Context, firstId: String, state: YouTubePlayer
             @JavascriptInterface fun onTime(t: Double, d: Double) = main.post { state.position = t.toFloat(); if (d > 0) state.duration = d.toFloat() }
         }, "Mithril")
         state.web = this
-        loadDataWithBaseURL(YouTubePlayerState.ORIGIN + "/", html(firstId, startSec.toInt()), "text/html", "utf-8", null)
+        loadDataWithBaseURL(YouTubePlayerState.ORIGIN + "/", html(safeId, startSec.toInt().coerceAtLeast(0)), "text/html", "utf-8", null)
     }
 }
 
@@ -77,20 +83,28 @@ private fun html(id: String, start: Int) = """
 <style>html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}#p{position:absolute;top:0;left:0;width:100%;height:100%}</style>
 </head><body><div id="p"></div>
 <script>
-var player=null, ready=false;
+var player=null, ready=false, pendingLoad=null;
 var tag=document.createElement('script'); tag.src='https://www.youtube.com/iframe_api'; document.head.appendChild(tag);
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('p',{width:'100%',height:'100%',videoId:'$id',
     playerVars:{start:$start,autoplay:1,playsinline:1,rel:0,modestbranding:1,controls:1,fs:0,iv_load_policy:3,origin:'${YouTubePlayerState.ORIGIN}',widget_referrer:'${YouTubePlayerState.ORIGIN}'},
     events:{
-      onReady:function(e){ready=true;Mithril.onReady(player.getDuration()||0);e.target.playVideo();},
+      onReady:function(e){
+        ready=true;
+        Mithril.onReady(player.getDuration()||0);
+        if(pendingLoad){ player.loadVideoById({videoId:pendingLoad[0],startSeconds:pendingLoad[1]||0}); pendingLoad=null; }
+        else { e.target.playVideo(); }
+      },
       onStateChange:function(e){Mithril.onState(e.data);},
       onError:function(e){Mithril.onError(e.data);}
     }});
   setInterval(function(){ if(ready&&player&&player.getCurrentTime){ Mithril.onTime(player.getCurrentTime()||0, player.getDuration()||0); } }, 500);
 }
-function cmd(c,a,b){ if(!ready||!player) return;
+function cmd(c,a,b){
+  if(c=='load'&&(!ready||!player)){ pendingLoad=[a,b||0]; return; }
+  if(!ready||!player) return;
   if(c=='play') player.playVideo(); else if(c=='pause') player.pauseVideo();
-  else if(c=='seek') player.seekTo(a,true); else if(c=='load') player.loadVideoById({videoId:a,startSeconds:b||0}); }
+  else if(c=='seek') player.seekTo(a,true); else if(c=='load'){ pendingLoad=null; player.loadVideoById({videoId:a,startSeconds:b||0}); }
+}
 </script></body></html>
 """.trimIndent()

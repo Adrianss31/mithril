@@ -1,14 +1,18 @@
 package it.mithril.app.data
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -30,47 +34,40 @@ class Repo(private val context: Context) {
     val weights: StateFlow<List<WeightEntity>?> = dao.weights().stateIn(scope, SharingStarted.Eagerly, null)
     val weekPlans: StateFlow<List<WeekPlanEntity>> = dao.weekPlans().stateIn(scope, SharingStarted.Eagerly, emptyList())
     val reviews: StateFlow<List<ReviewAnswerEntity>> = dao.reviewAnswers().stateIn(scope, SharingStarted.Eagerly, emptyList())
+    val nutrition: StateFlow<List<NutritionDayEntity>> = dao.nutritionDays().stateIn(scope, SharingStarted.Eagerly, emptyList())
     val appSettings: StateFlow<AppSettings> = settings.flow.stateIn(scope, SharingStarted.Eagerly, AppSettings())
 
     /** Hook per widget e promemoria, collegati da [it.mithril.app.MithrilApp]. */
     var onDataChanged: (suspend () -> Unit)? = null
+    private val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     init {
-        scope.launch { while (true) { delay(60_000); refreshToday() } }
+        scope.launch {
+            changes.collectLatest {
+                delay(150)
+                runCatching { onDataChanged?.invoke() }.onFailure { Log.w("MithrilRepo", "onDataChanged failed", it) }
+            }
+        }
     }
 
     fun refreshToday() { val now = LocalDate.now(); if (now != _today.value) _today.value = now }
 
-    private fun changed() { scope.launch { runCatching { onDataChanged?.invoke() } } }
+    private fun changed() { changes.tryEmit(Unit) }
 
     fun goals(): Map<Long, Int> = weekPlans.value.associate { it.weekStart to it.goalSessions }
 
     // --- Video ---
     suspend fun addVideo(meta: VideoMeta, tags: Set<String>, miniId: Long?, startSec: Int = 0, endSec: Int? = null): Long {
-        val existing = dao.videoByYoutubeId(meta.youtubeId)
-        val id = if (existing != null) {
-            // Ricondiviso senza indicare inizio e fine: restano quelli già salvati.
-            val keepTrim = startSec == 0 && endSec == null
-            dao.updateVideo(existing.copy(title = meta.title, localUri = meta.localUri ?: existing.localUri, channel = meta.channel, durationSec = meta.durationSec ?: existing.durationSec,
-                tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable ?: existing.embeddable, startSec = if (keepTrim) existing.startSec else startSec, endSec = if (keepTrim) existing.endSec else endSec))
-            existing.id
-        } else dao.insertVideo(VideoEntity(youtubeId = meta.youtubeId, title = meta.title, channel = meta.channel, durationSec = meta.durationSec,
-            thumbnailUrl = meta.thumbnailUrl, tags = Tags.join(tags), miniVideoId = miniId, embeddable = meta.embeddable, localUri = meta.localUri,
-            startSec = startSec, endSec = endSec))
-        changed(); return id
+        val id = dao.upsertVideoAtomic(meta, Tags.join(tags), miniId, startSec, endSec)
+        changed()
+        return id
     }
     suspend fun updateVideo(v: VideoEntity) { dao.updateVideo(v); changed() }
     suspend fun deleteVideo(id: Long) {
-        dao.clearMiniRefs(id)
-        // Toglie il video dagli slot futuri; gli slot rimasti vuoti spariscono.
-        dao.slotsFrom(today.value.toEpochDay()).forEach { s ->
-            if (id in s.videoIdList) {
-                val rest = s.videoIdList - id
-                if (rest.isEmpty()) dao.deleteSlot(s.id) else dao.upsertSlot(s.copy(videoIds = rest.joinToString(",")))
-            }
-        }
-        dao.video(id)?.let { LocalVideos.forget(context, it) }
-        dao.deleteVideo(id); changed()
+        val v = dao.video(id)
+        dao.deleteVideoAtomic(id, today.value.toEpochDay())
+        if (v != null) LocalVideos.forget(context, v)
+        changed()
     }
     /** Intro e outro da saltare: [end] null = fino alla fine. */
     suspend fun setTrim(id: Long, start: Int, end: Int?) { dao.setTrim(id, start.coerceAtLeast(0), end); changed() }
@@ -80,10 +77,8 @@ class Repo(private val context: Context) {
     // --- Planner ---
     suspend fun saveSlot(s: SlotEntity): Long { val id = dao.upsertSlot(s); changed(); return if (s.id != 0L) s.id else id }
     suspend fun deleteSlot(id: Long) { dao.deleteSlot(id); changed() }
-    suspend fun replaceWeek(start: LocalDate, newSlots: List<SlotEntity>, goal: Int) {
-        val from = start.toEpochDay()
-        dao.replaceWeekSlots(from, from + 6, newSlots)
-        dao.upsertWeekPlan(WeekPlanEntity(from, goal))
+    suspend fun replaceWeekRange(weekStart: LocalDate, from: LocalDate, newSlots: List<SlotEntity>, goal: Int) {
+        dao.replaceWeekWithGoal(from.toEpochDay(), weekStart.toEpochDay() + 6, newSlots, weekStart.toEpochDay(), goal.coerceIn(1, 7))
         changed()
     }
     suspend fun setWeekGoal(start: LocalDate, goal: Int) { dao.upsertWeekPlan(WeekPlanEntity(start.toEpochDay(), goal.coerceIn(1, 7))); changed() }
@@ -91,30 +86,27 @@ class Repo(private val context: Context) {
         dao.upsertReview(ReviewAnswerEntity(start.toEpochDay(), obstacle, day?.toEpochDay()))
 
     /** Ora e luogo ereditati dall'ultimo slot dello stesso giorno della settimana. */
-    suspend fun lastSlotLike(date: LocalDate): SlotEntity? =
-        dao.slotsBefore(date.toEpochDay()).firstOrNull { LocalDate.ofEpochDay(it.date).dayOfWeek == date.dayOfWeek }
-            ?: dao.slotsBefore(date.toEpochDay()).firstOrNull()
+    suspend fun lastSlotLike(date: LocalDate): SlotEntity? {
+        val past = dao.slotsBefore(date.toEpochDay())
+        return past.firstOrNull { LocalDate.ofEpochDay(it.date).dayOfWeek == date.dayOfWeek } ?: past.firstOrNull()
+    }
 
     // --- Sessioni ---
     suspend fun logSession(slotId: Long?, mini: Boolean, ratio: Float, videoIds: List<Long>, title: String, durationSec: Int): Long {
-        val id = dao.insertLog(SessionLogEntity(
+        val log = SessionLogEntity(
             slotId = slotId, date = LocalDate.now().toEpochDay(),
             kind = if (mini) SessionLogEntity.KIND_MINI else SessionLogEntity.KIND_FULL,
-            watchedRatio = ratio, fatigue = 6, note = null, completedAt = System.currentTimeMillis(),
+            watchedRatio = ratio, fatigue = null, note = null, completedAt = System.currentTimeMillis(),
             title = title, videoIds = videoIds.joinToString(","), durationSec = durationSec,
-        ))
-        if (videoIds.isNotEmpty()) dao.bumpTimesDone(videoIds, 1)
-        changed(); return id
+        )
+        val id = dao.logSessionAtomic(log, videoIds)
+        changed()
+        return id
     }
     suspend fun finishLog(id: Long, fatigue: Int, note: String?) {
         dao.log(id)?.let { dao.updateLog(it.copy(fatigue = fatigue, note = note?.trim()?.takeIf { n -> n.isNotEmpty() })) }
     }
-    suspend fun undoLog(id: Long) {
-        val log = dao.log(id) ?: return
-        val ids = log.videoIds.split(',').mapNotNull { it.toLongOrNull() }
-        if (ids.isNotEmpty()) dao.bumpTimesDone(ids, -1)
-        dao.deleteLog(id); changed()
-    }
+    suspend fun undoLog(id: Long) { dao.undoLogAtomic(id); changed() }
 
     // --- Peso ---
     suspend fun saveWeight(date: LocalDate, kg: Double) {
@@ -125,6 +117,23 @@ class Repo(private val context: Context) {
     }
     suspend fun deleteWeight(date: Long) { dao.deleteWeight(date); changed() }
     suspend fun restoreWeight(w: WeightEntity) { dao.upsertWeight(w); changed() }
+
+    // --- Calorie / Nutrizione ---
+    suspend fun syncNutritionRange(from: Long, to: Long, rows: List<NutritionDayEntity>) {
+        dao.replaceNutritionRange(from, to, rows)
+    }
+    suspend fun clearNutrition() { dao.clearNutrition() }
+
+    // --- Impostazioni (con notifica a widget e promemoria) ---
+    suspend fun setGoal(targetKg: Double?, startKg: Double?, startDate: Long) { settings.setGoal(targetKg, startKg, startDate); changed() }
+    suspend fun setRate(v: Double) { settings.setRate(v); changed() }
+    suspend fun setStepsGoal(v: Int) { settings.setStepsGoal(v); changed() }
+    suspend fun setCaloriesGoal(v: Int) { settings.setCaloriesGoal(v); changed() }
+    suspend fun setProteinGoal(v: Int?) { settings.setProteinGoal(v); changed() }
+    suspend fun setNutritionSource(pkg: String?) { settings.setNutritionSource(pkg); changed() }
+    suspend fun setReminderLead(v: Int) { settings.setReminderLead(v); changed() }
+    suspend fun setReviewReminder(on: Boolean) { settings.setReviewReminder(on); changed() }
+    suspend fun setCastDevice(id: String?, name: String?) { settings.setCastDevice(id, name); changed() }
 
     fun weekGoal(start: LocalDate) = Week.goalFor(start, goals())
 

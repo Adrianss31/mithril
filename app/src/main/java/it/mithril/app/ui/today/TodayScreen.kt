@@ -58,9 +58,11 @@ import it.mithril.app.data.SlotEntity
 import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.domain.Fmt
+import it.mithril.app.domain.Nutrition
 import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Trend
 import it.mithril.app.domain.Week
+import it.mithril.app.domain.toDomain
 import it.mithril.app.health.Health
 import it.mithril.app.health.StepsState
 import it.mithril.app.ui.BottomGap
@@ -100,6 +102,7 @@ fun TodayScreen() {
     val videosOrNull by repo.videos.collectAsStateWithLifecycle()
     val weightsOrNull by repo.weights.collectAsStateWithLifecycle()
     val plans by repo.weekPlans.collectAsStateWithLifecycle()
+    val nutrition by repo.nutrition.collectAsStateWithLifecycle()
     val settings by repo.appSettings.collectAsStateWithLifecycle()
     val steps by Health.state.collectAsStateWithLifecycle()
     val update by Updates.state.collectAsStateWithLifecycle()
@@ -112,9 +115,13 @@ fun TodayScreen() {
     val loggedSlots = remember(logs) { logs.mapNotNull { it.slotId }.toSet() }
     val todaySlot = Sessions.todaySlots(slots, today).firstOrNull { it.id !in loggedSlots }
     val skippedYesterday = todayLog == null && Week.yesterdaySkipped(today, slots, logs)
-    val nowMin = LocalTime.now().let { it.hour * 60 + it.minute }
-    val next = remember(slots, logs, today) { Sessions.next(slots, logs, today, nowMin, includeToday = false) }
+    val next = remember(slots, logs, today) { Sessions.next(slots, logs, today, includeToday = false) }
     val epoch = nav.tabEpoch
+    val nutritionDays = remember(nutrition) { nutrition.map { it.toDomain() } }
+    val todayCalories = steps.todayNutrition?.kcal ?: nutritionDays.firstOrNull { it.date == today.toEpochDay() }?.kcal
+    val weekCalAvg = remember(nutritionDays, today, settings.caloriesGoal) {
+        Nutrition.summarize(nutritionDays, today.minusDays(7), today, settings.caloriesGoal).avgKcal
+    }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         // Fascia hero
@@ -132,7 +139,7 @@ fun TodayScreen() {
                     style = T.secondary, color = M.c.onHero.copy(alpha = 0.85f),
                 )
                 Spacer(Modifier.width(8.dp))
-                RoundIconButton("settings", { nav.push(Dest.Settings) }, size = 34.dp, iconSize = 20.dp, bg = M.c.heroSoft, fg = M.c.onHero, contentDescription = "Impostazioni")
+                RoundIconButton("settings", { nav.push(Dest.Settings) }, size = 40.dp, iconSize = 20.dp, bg = M.c.heroSoft, fg = M.c.onHero, contentDescription = "Impostazioni")
             }
             Spacer(Modifier.height(16.dp))
             HeroDays(summary.days, key = epoch)
@@ -182,6 +189,9 @@ fun TodayScreen() {
                 StepsMini(steps, settings.stepsGoal, Modifier.weight(1f).fillMaxHeight().rise(i + 1, epoch))
             }
             i += 2
+            if (steps.available) {
+                CaloriesMini(steps.nutritionGranted, todayCalories, settings.caloriesGoal, weekCalAvg, Modifier.rise(i++, epoch))
+            }
             Card(Modifier.rise(i, epoch), radius = 24.dp, padding = PaddingValues(16.dp), onClick = { nav.push(Dest.Review(Week.reviewWeek(today))) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(40.dp).clip(CircleShape).background(M.c.surface2), contentAlignment = Alignment.Center) { Symbol("insights", 22.dp, M.c.ink) }
@@ -341,7 +351,7 @@ private fun WeightMini(weights: List<Pair<Long, Double>>, today: LocalDate, modi
     Card(modifier, radius = 24.dp, padding = PaddingValues(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 14.dp), onClick = { nav.select(Tab.WEIGHT) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (enough) "Peso · trend" else "Peso", style = T.secondary, color = M.c.ink2, modifier = Modifier.weight(1f))
-            RoundIconButton("add", { nav.sheet = SheetKind.Weigh() }, size = 32.dp, iconSize = 20.dp, bg = M.c.accentSoft, fg = M.c.accentInk, contentDescription = "Nuova pesata")
+            RoundIconButton("add", { nav.sheet = SheetKind.Weigh() }, size = 40.dp, iconSize = 20.dp, bg = M.c.accentSoft, fg = M.c.accentInk, contentDescription = "Nuova pesata")
         }
         Spacer(Modifier.height(4.dp))
         if (now != null) StatValue(Fmt.kg(now), "kg", ts(30, FontWeight.SemiBold, (-0.02).em))
@@ -368,7 +378,6 @@ private fun StepsMini(steps: StepsState, goal: Int, modifier: Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val launcher = rememberLauncherForActivityResult(Health.permissionContract()) { scope.launch { Health.refresh(context) } }
-    LaunchedEffect(Unit) { Health.refresh(context) }
     Card(modifier, radius = 24.dp, padding = PaddingValues(16.dp)) {
         Text("Passi oggi", style = T.secondary, color = M.c.ink2)
         Spacer(Modifier.height(10.dp))
@@ -389,6 +398,46 @@ private fun StepsMini(steps: StepsState, goal: Int, modifier: Modifier) {
             else -> {
                 Text("Health Connect non è disponibile su questo telefono.", style = T.secondary, color = M.c.ink2)
             }
+        }
+    }
+}
+
+@Composable
+private fun CaloriesMini(granted: Boolean, todayKcal: Int?, goalKcal: Int, weekAvg: Int?, modifier: Modifier) {
+    val nav = LocalNav.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(Health.permissionContract()) { scope.launch { Health.refresh(context) } }
+    Card(modifier.fillMaxWidth(), radius = 24.dp, padding = PaddingValues(16.dp), onClick = { nav.push(Dest.Calories) }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(M.c.accentSoft), contentAlignment = Alignment.Center) {
+                Symbol("local_fire_department", 22.dp, M.c.accentInk, filled = true)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Calorie oggi", style = T.secondary, color = M.c.ink2)
+                if (granted) {
+                    val v = todayKcal ?: 0
+                    Text(
+                        if (v > 0) "${Fmt.thousands(v)} / ${Fmt.thousands(goalKcal)} kcal" else "Nessun pasto oggi · obiettivo ${Fmt.thousands(goalKcal)}",
+                        style = T.title15, color = M.c.ink,
+                    )
+                    if (weekAvg != null) {
+                        Text("Media ultimi 7 gg: ${Fmt.thousands(weekAvg)} kcal/g", style = T.caption, color = M.c.ink3)
+                    }
+                } else {
+                    Text("Collega MyFitnessPal via Health Connect", style = T.title15, color = M.c.ink)
+                }
+            }
+            if (!granted) {
+                TonalButton("Collega", { launcher.launch(Health.requestSet) }, height = 40.dp)
+            } else {
+                Symbol("chevron_right", 22.dp, M.c.ink2)
+            }
+        }
+        if (granted) {
+            Spacer(Modifier.height(10.dp))
+            GrowBar((todayKcal ?: 0).toFloat() / goalKcal.coerceAtLeast(1), Modifier.fillMaxWidth(), height = 6.dp)
         }
     }
 }

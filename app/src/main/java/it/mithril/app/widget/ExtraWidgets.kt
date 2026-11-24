@@ -39,7 +39,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
-import coil.ImageLoader
+import coil.Coil
 import coil.request.ImageRequest
 import it.mithril.app.MainActivity
 import it.mithril.app.data.Repo
@@ -161,7 +161,7 @@ private suspend fun loadFirstVideo(context: Context): FirstVideo {
     val thumb = videos[index].thumbnailUrl.takeIf { it.isNotBlank() }?.let { url ->
         runCatching {
             val req = ImageRequest.Builder(context).data(url).size(234, 234).allowHardware(false).build()
-            (ImageLoader(context).execute(req).drawable as? BitmapDrawable)?.bitmap
+            (Coil.imageLoader(context).execute(req).drawable as? BitmapDrawable)?.bitmap
         }.getOrNull()
     }
     val progress = p?.let { (it.watched / it.total.coerceAtLeast(1)).coerceIn(0f, 1f) }
@@ -371,12 +371,14 @@ private fun GoalUnset(context: Context, d: GoalData.NoGoal) = Row(GlanceModifier
 @Composable
 private fun GoalBar(progress: Float, width: Dp, disc: Bitmap, thick: Dp = 10.dp) {
     val knob = thick + 8.dp
-    Box(GlanceModifier.width(width).height(knob), contentAlignment = Alignment.CenterStart) {
-        Box(GlanceModifier.width(width).height(thick).cornerRadius(thick / 2).background(WC.surface2)) {}
-        val fill = (width - knob) * progress + knob / 2
+    val safeW = width.coerceAtLeast(knob)
+    val clamped = progress.coerceIn(0f, 1f)
+    Box(GlanceModifier.width(safeW).height(knob), contentAlignment = Alignment.CenterStart) {
+        Box(GlanceModifier.width(safeW).height(thick).cornerRadius(thick / 2).background(WC.surface2)) {}
+        val fill = (safeW - knob) * clamped + knob / 2
         Box(GlanceModifier.width(fill).height(thick).cornerRadius(thick / 2).background(WC.accent)) {}
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(GlanceModifier.width(fill - knob / 2))
+            Spacer(GlanceModifier.width((fill - knob / 2).coerceAtLeast(0.dp)))
             Box(GlanceModifier.size(knob), contentAlignment = Alignment.Center) {
                 Tinted(disc, knob, WC.surface)
                 Tinted(disc, knob - 6.dp, WC.accent)
@@ -390,6 +392,7 @@ private fun arrival(d: GoalData.Track): Pair<String, Boolean> = when {
     d.reachedOn != null -> "raggiunto" to false
     d.eta != null -> Fmt.etaShort(d.eta) to !d.onTrack
     d.rate == null -> "ritmo tra poco" to false
+    abs(d.rate) > Trend.STABLE_SLOPE * 7 -> "si allontana" to true
     else -> "trend fermo" to false
 }
 

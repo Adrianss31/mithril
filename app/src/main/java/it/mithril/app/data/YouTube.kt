@@ -3,6 +3,8 @@ package it.mithril.app.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -34,6 +36,8 @@ object YouTube {
         return PATTERNS.firstNotNullOfOrNull { it.find(t)?.groupValues?.get(1) }
     }
 
+    fun isValidId(id: String): Boolean = ID.matches(id)
+
     fun thumbnail(id: String) = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
     fun watchUrl(id: String) = "https://www.youtube.com/watch?v=$id"
 
@@ -41,9 +45,11 @@ object YouTube {
         var title: String? = null
         var channel: String? = null
         var embeddable: Boolean? = null
+        var anyNetworkOk = false
         runCatching {
             val url = "https://www.youtube.com/oembed?format=json&url=" + URLEncoder.encode(watchUrl(id), "UTF-8")
             val (code, body) = get(url)
+            anyNetworkOk = true
             when (code) {
                 200 -> JSONObject(body).let { title = it.optString("title"); channel = it.optString("author_name") }
                 401, 403 -> embeddable = false
@@ -52,6 +58,7 @@ object YouTube {
         var duration: Int? = null
         runCatching {
             val (code, page) = get(watchUrl(id) + "&hl=it&gl=IT")
+            anyNetworkOk = true
             if (code == 200) {
                 duration = Regex("\"lengthSeconds\":\"(\\d+)\"").find(page)?.groupValues?.get(1)?.toIntOrNull()
                 Regex("\"playableInEmbed\":(true|false)").find(page)?.groupValues?.get(1)?.let { embeddable = it == "true" }
@@ -59,6 +66,7 @@ object YouTube {
                 if (channel.isNullOrBlank()) channel = Regex("\"ownerChannelName\":\"((?:[^\"\\\\]|\\\\.)*)\"").find(page)?.groupValues?.get(1)?.let(::unescapeJson)
             }
         }
+        if (!anyNetworkOk) throw IOException("Offline")
         VideoMeta(
             youtubeId = id,
             title = title?.takeIf { it.isNotBlank() } ?: "Video YouTube",
@@ -80,7 +88,15 @@ object YouTube {
         return try {
             val code = c.responseCode
             val body = (if (code in 200..299) c.inputStream else c.errorStream)?.use { input ->
-                input.readBytes().let { if (it.size > 3_000_000) it.copyOf(3_000_000) else it }.toString(Charsets.UTF_8)
+                val out = ByteArrayOutputStream()
+                val buf = ByteArray(32 * 1024)
+                val limit = 3_000_000
+                while (out.size() < limit) {
+                    val n = input.read(buf, 0, minOf(buf.size, limit - out.size()))
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                }
+                out.toString(Charsets.UTF_8.name())
             } ?: ""
             code to body
         } finally { c.disconnect() }

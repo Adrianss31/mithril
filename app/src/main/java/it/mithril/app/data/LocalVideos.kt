@@ -34,7 +34,10 @@ object LocalVideos {
             duration = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let { (it / 1000).toInt() }
             val at = ((duration ?: 0) * 150_000L).coerceIn(1_000_000L, 20_000_000L)
             val frame = (if (Build.VERSION.SDK_INT >= 27) mmr.getScaledFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 480, 270) else null)
-                ?: mmr.getFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let { Bitmap.createScaledBitmap(it, 480, 480 * it.height / it.width.coerceAtLeast(1), true) }
+                ?: mmr.getFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let {
+                    val scale = minOf(480f / it.width.coerceAtLeast(1), 270f / it.height.coerceAtLeast(1)).coerceAtMost(1f)
+                    Bitmap.createScaledBitmap(it, (it.width * scale).toInt().coerceAtLeast(1), (it.height * scale).toInt().coerceAtLeast(1), true)
+                }
             if (frame != null) {
                 val file = File(thumbDir(context), "$id.jpg")
                 file.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 85, it) }
@@ -64,6 +67,12 @@ object LocalVideos {
         val uri = v.localUri ?: return
         runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         if (v.thumbnailUrl.startsWith("file:")) runCatching { File(Uri.parse(v.thumbnailUrl).path!!).delete() }
+    }
+
+    fun forgetMeta(context: Context, meta: VideoMeta) {
+        val uri = meta.localUri ?: return
+        runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        if (meta.thumbnailUrl.startsWith("file:")) runCatching { File(Uri.parse(meta.thumbnailUrl).path!!).delete() }
     }
 
     private fun thumbDir(context: Context) = File(context.filesDir, "thumbs").apply { mkdirs() }

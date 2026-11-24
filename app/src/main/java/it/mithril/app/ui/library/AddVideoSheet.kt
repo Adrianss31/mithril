@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import it.mithril.app.ui.rememberRepo
 import it.mithril.app.ui.startVideos
 import it.mithril.app.ui.theme.ts
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.data.VideoMeta
@@ -75,39 +78,47 @@ fun ColumnScope.AddVideoSheet(s: SheetKind.AddVideo, onDone: () -> Unit) {
     val nav = LocalNav.current
     val repo = rememberRepo()
     val toast = LocalToast.current
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val edit = s.edit
-    val meta = s.meta ?: edit?.let { VideoMeta(it.youtubeId, it.title, it.channel, it.durationSec, it.thumbnailUrl, it.embeddable) } ?: return
+    val meta = s.meta ?: edit?.let { VideoMeta(it.youtubeId, it.title, it.channel, it.durationSec, it.thumbnailUrl, it.embeddable, it.localUri) } ?: return
+    var savedLocal by remember(meta.youtubeId) { mutableStateOf(false) }
+    DisposableEffect(meta.youtubeId) {
+        onDispose {
+            if (edit == null && meta.localUri != null && !savedLocal) LocalVideos.forgetMeta(context, meta)
+        }
+    }
     VideoForm(
         meta = meta,
         edit = edit,
         onSave = { title, tags, mini, start, end ->
-            scope.launch {
+            savedLocal = true
+            repo.scope.launch {
                 if (edit != null) repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini, startSec = start, endSec = end))
                 else repo.addVideo(meta.copy(title = title), tags, mini, start, end)
-                toast.show(if (edit != null) "Video aggiornato" else "Salvato in Libreria")
             }
+            toast.show(if (edit != null) "Video aggiornato" else "Salvato in Libreria")
             onDone()
         },
         onDelete = edit?.let { v ->
             {
-                scope.launch {
-                    repo.deleteVideo(v.id)
-                    toast.show("Video eliminato")
-                }
+                repo.scope.launch { repo.deleteVideo(v.id) }
+                toast.show("Video eliminato")
                 onDone()
             }
         },
         onPlay = edit?.let { v -> { onDone(); nav.startVideos(listOf(v.id)) } },
         // Salva quanto scritto finora e apre il video per scegliere inizio e fine guardandolo.
         onTrim = { title, tags, mini, start, end ->
-            scope.launch {
+            savedLocal = true
+            repo.scope.launch {
                 val id = if (edit != null) {
                     repo.updateVideo(edit.copy(title = title, tags = Tags.join(tags), miniVideoId = mini, startSec = start, endSec = end)); edit.id
                 } else repo.addVideo(meta.copy(title = title), tags, mini, start, end)
-                nav.push(Dest.Trim(id))
+                withContext(Dispatchers.Main) {
+                    nav.push(Dest.Trim(id))
+                    onDone()
+                }
             }
-            onDone()
         },
     )
 }

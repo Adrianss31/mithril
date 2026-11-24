@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,7 +40,9 @@ import it.mithril.app.ui.theme.rise
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import it.mithril.app.domain.Fmt
+import it.mithril.app.domain.Nutrition
 import it.mithril.app.domain.Week
+import it.mithril.app.domain.toDomain
 import it.mithril.app.health.Health
 import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
@@ -57,20 +62,27 @@ private val OBSTACLES = listOf("Stanchezza", "Orario sbagliato", "Imprevisto", "
 fun ReviewScreen(start: LocalDate) {
     val repo = rememberRepo()
     val nav = LocalNav.current
-    val scope = rememberCoroutineScope()
     val today by repo.today.collectAsStateWithLifecycle()
     val slots by repo.slots.collectAsStateWithLifecycle()
     val logs by repo.logs.collectAsStateWithLifecycle()
     val weights by repo.weights.collectAsStateWithLifecycle()
+    val plans by repo.weekPlans.collectAsStateWithLifecycle()
     val reviews by repo.reviews.collectAsStateWithLifecycle()
+    val nutrition by repo.nutrition.collectAsStateWithLifecycle()
     val settings by repo.appSettings.collectAsStateWithLifecycle()
     val steps by Health.state.collectAsStateWithLifecycle()
-    val s = remember(slots, logs, today) { Week.summary(start, today, slots, logs, repo.weekGoal(start)) }
+    val goals = remember(plans) { plans.associate { it.weekStart to it.goalSessions } }
+    val s = remember(slots, logs, today, goals) { Week.summary(start, today, slots, logs, Week.goalFor(start, goals)) }
+    val nutritionDays = remember(nutrition) { nutrition.map { it.toDomain() } }
+    val weekCalEnd = minOf(start.plusDays(7), today)
+    val calSummary = remember(nutritionDays, start, weekCalEnd, settings.caloriesGoal) {
+        Nutrition.summarize(nutritionDays, start, weekCalEnd, settings.caloriesGoal)
+    }
     val saved = reviews.firstOrNull { it.weekStart == start.toEpochDay() }
     var obstacle by rememberSaveable(saved?.obstacle) { mutableStateOf(saved?.obstacle) }
     val skipped = s.skippedDays.lastOrNull()
 
-    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars)) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)).background(M.c.hero)
                 .padding(start = 8.dp, end = 20.dp, top = statusBarTop() + 6.dp, bottom = 24.dp)
@@ -95,6 +107,20 @@ fun ReviewScreen(start: LocalDate) {
                 Text("Pianificate ${s.planned} · Fatte ${s.done} · Mini ${s.mini}", style = T.secondary, color = M.c.ink2)
             }
             WeightAndSteps(start, weights?.map { it.date to it.kg } ?: emptyList(), today, steps, settings.stepsGoal, Modifier.rise(1), spark = true)
+            if (calSummary.avgKcal != null) {
+                Card(Modifier.rise(1).fillMaxWidth(), radius = 22.dp, onClick = { nav.push(Dest.Calories) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Calorie · media settimana", style = T.secondary, color = M.c.ink2)
+                            Text("${Fmt.thousands(calSummary.avgKcal)} kcal/g", style = T.cardTitle, color = M.c.ink)
+                        }
+                        Text(
+                            "${calSummary.onTargetDays} di ${calSummary.daysTracked} gg in target",
+                            style = T.caption, color = M.c.ink3,
+                        )
+                    }
+                }
+            }
             if (skipped != null) Card(Modifier.rise(2).fillMaxWidth()) {
                 Text("${Fmt.dayName(skipped.dayOfWeek)} è saltato. Cosa ha ostacolato?", style = T.title16, color = M.c.ink)
                 Spacer(Modifier.height(12.dp))
@@ -102,7 +128,7 @@ fun ReviewScreen(start: LocalDate) {
                     OBSTACLES.forEach { o ->
                         Chip(o, obstacle == o, {
                             obstacle = o
-                            scope.launch { repo.saveReview(start, o, skipped) }
+                            repo.scope.launch { repo.saveReview(start, o, skipped) }
                         })
                     }
                 }

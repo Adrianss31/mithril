@@ -101,13 +101,17 @@ object Reminders {
     internal suspend fun fire(context: Context, intent: Intent) {
         val repo = Repo.get(context)
         when (intent.action) {
-            ACTION_MIDNIGHT -> Widgets.updateAll(context)
+            ACTION_MIDNIGHT -> {
+                repo.refreshToday()
+                Widgets.updateAll(context)
+            }
             ACTION_SESSION -> {
                 val slot = repo.dao.slot(intent.getLongExtra(EXTRA_SLOT, -1)) ?: return
                 if (repo.dao.logsFrom(slot.date).any { it.slotId == slot.id || it.date == slot.date }) return
-                val videos = Sessions.videosOf(slot.videoIdList, repo.dao.videosNow())
+                val allVideos = repo.dao.videosNow()
+                val videos = Sessions.videosOf(slot.videoIdList, allVideos)
                 if (videos.isEmpty()) return
-                val mini = Sessions.miniFor(videos, repo.dao.videosNow())
+                val mini = Sessions.miniFor(videos, allVideos)
                 val lead = repo.settings.now().reminderLeadMin
                 val b = NotificationCompat.Builder(context, CHANNEL_SESSIONS)
                     .setSmallIcon(R.drawable.ic_stat_notification)
@@ -147,10 +151,11 @@ private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.Default
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
+        val app = context.applicationContext
         receiverScope.launch {
             try {
-                Reminders.fire(context.applicationContext, intent)
-                Reminders.reschedule(context.applicationContext)
+                runCatching { Reminders.fire(app, intent) }
+                runCatching { Reminders.reschedule(app) }
             } finally { pending.finish() }
         }
     }
@@ -158,9 +163,28 @@ class AlarmReceiver : BroadcastReceiver() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action
+        if (action !in EXPECTED_ACTIONS) return
         val pending = goAsync()
+        val app = context.applicationContext
         receiverScope.launch {
-            try { Reminders.reschedule(context.applicationContext) } finally { pending.finish() }
+            try {
+                if (action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED) {
+                    runCatching { Repo.get(app).refreshToday() }
+                    runCatching { Widgets.updateAll(app) }
+                }
+                runCatching { Reminders.reschedule(app) }
+            } finally { pending.finish() }
         }
+    }
+
+    private companion object {
+        val EXPECTED_ACTIONS = setOf(
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED,
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED",
+        )
     }
 }

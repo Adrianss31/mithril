@@ -140,7 +140,8 @@ fun WeightChart(trend: Trend, today: LocalDate, range: Range, goalKg: Double?, m
 
     var canvasWidth by remember { mutableFloatStateOf(0f) }
     var scrubDay by remember(range, trend, forecast) { mutableStateOf<Long?>(null) }
-    val labelWPx = with(density) { 34.dp.toPx() }
+    val measuredLabelW = remember(measurer, labelStyle) { measurer.measure("100,0", labelStyle).size.width.toFloat() }
+    val labelWPx = maxOf(with(density) { 34.dp.toPx() }, measuredLabelW + with(density) { 10.dp.toPx() })
     val snapRadiusPx = with(density) { 6.dp.toPx() }
     val denseCutoffPx = with(density) { 3.5.dp.toPx() }
 
@@ -211,29 +212,28 @@ fun WeightChart(trend: Trend, today: LocalDate, range: Range, goalKg: Double?, m
                 }
             }
     ) {
-        val labelW = 34.dp.toPx()
         val topH = 28.dp.toPx()
         val bottomH = 20.dp.toPx()
-        val w = size.width - labelW
+        val w = (size.width - labelWPx).coerceAtLeast(1f)
         val h = (size.height - topH - bottomH).coerceAtLeast(1f)
         fun x(d: Long) = (d - from).toFloat() / (to - from) * w
         fun y(v: Double) = topH + ((hi - v) / (hi - lo)).toFloat() * h
 
         // Metà futura appena velata
-        if (forecast) drawRoundRect(c.surface2.copy(alpha = 0.5f), Offset(x(t), topH), Size(w - x(t), h), CornerRadius(8.dp.toPx()))
+        if (forecast) drawRoundRect(c.surface2.copy(alpha = 0.5f), Offset(x(t), topH), Size((w - x(t)).coerceAtLeast(0f), h), CornerRadius(8.dp.toPx()))
         // Etichette Y (3) a destra
         for (k in 0..2) {
             val v = hi - pad - (hi - lo - 2 * pad) * k / 2
             // Il peso previsto ha già la sua etichetta in fondo alla proiezione: niente doppione sull'asse.
             if (proj != null && abs(y(v) - y(proj.endKg)) < 14.dp.toPx()) continue
             val txt = measurer.measure(Fmt.kg(v), labelStyle)
-            drawText(txt, topLeft = Offset(w + 8.dp.toPx(), (y(v) - txt.size.height / 2).coerceIn(topH, topH + h - txt.size.height)))
+            drawText(txt, topLeft = Offset(w + 8.dp.toPx(), (y(v) - txt.size.height / 2).coerceIn(topH, (topH + h - txt.size.height).coerceAtLeast(topH))))
         }
         // Etichette X
         xLabels.forEach { (label, d, align) ->
             val txt = measurer.measure(label, labelStyle)
             val cx = x(d) - txt.size.width * align
-            drawText(txt, topLeft = Offset(cx.coerceIn(0f, w - txt.size.width), topH + h + 4.dp.toPx()))
+            drawText(txt, topLeft = Offset(cx.coerceIn(0f, (w - txt.size.width).coerceAtLeast(0f)), topH + h + 4.dp.toPx()))
         }
         // Obiettivo: linea se è in scala, altrimenti una freccia sul bordo verso cui si trova
         if (goalKg != null) {
@@ -269,10 +269,12 @@ fun WeightChart(trend: Trend, today: LocalDate, range: Range, goalKg: Double?, m
                 drawCircle(c.accent.copy(alpha = 0.8f * late.value), 4.dp.toPx(), end, style = Stroke(2.dp.toPx()))
                 val txt = measurer.measure(Fmt.kg(proj.endKg), valueStyle.copy(color = valueStyle.color.copy(alpha = late.value)))
                 val above = end.y - txt.size.height - 6.dp.toPx() >= topH
+                val minX = x(t) + 4.dp.toPx()
+                val maxX = (w - txt.size.width - 2.dp.toPx()).coerceAtLeast(minX)
                 drawText(
                     txt,
                     topLeft = Offset(
-                        (end.x - txt.size.width / 2f).coerceIn(x(t) + 4.dp.toPx(), w - txt.size.width - 2.dp.toPx()),
+                        (end.x - txt.size.width / 2f).coerceIn(minX, maxX),
                         if (above) end.y - txt.size.height - 6.dp.toPx() else end.y + 6.dp.toPx(),
                     ),
                 )

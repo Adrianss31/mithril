@@ -44,6 +44,9 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -68,7 +71,7 @@ fun Symbol(name: String, size: Dp = 24.dp, color: Color = M.c.ink, filled: Boole
     val px = with(androidx.compose.ui.platform.LocalDensity.current) { size.toSp() }
     Text(
         name,
-        modifier = modifier,
+        modifier = modifier.clearAndSetSemantics {},
         style = TextStyle(
             fontFamily = if (filled) SymbolsFilled else SymbolsOutline,
             fontSize = px, lineHeight = px, color = color,
@@ -294,6 +297,7 @@ fun RoundIconButton(
             .alpha(if (enabled) 1f else 0.35f)
             .clip(CircleShape)
             .background(bg)
+            .semantics { if (contentDescription != null) this.contentDescription = contentDescription }
             .clickable(source, null, enabled = enabled, role = Role.Button, onClickLabel = contentDescription, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Symbol(icon, iconSize, fg, filled) }

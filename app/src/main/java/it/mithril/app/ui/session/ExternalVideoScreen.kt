@@ -12,11 +12,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -25,7 +28,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,9 +38,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import it.mithril.app.data.SessionProgress
 import it.mithril.app.ui.rememberRepo
 import it.mithril.app.ui.statusBarTop
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import it.mithril.app.data.YouTube
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Sessions
@@ -62,7 +67,6 @@ fun ExternalVideoScreen(d: Dest.External) {
     val nav = LocalNav.current
     val toast = LocalToast.current
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val all by repo.videos.collectAsStateWithLifecycle()
     val videos = Sessions.videosOf(d.req.videoIds, all ?: emptyList())
     val v = videos.firstOrNull { it.id == d.videoId } ?: videos.firstOrNull() ?: return
@@ -78,17 +82,20 @@ fun ExternalVideoScreen(d: Dest.External) {
     fun finish(mini: Boolean) {
         if (finishing) return
         finishing = true
-        scope.launch {
+        SessionProgress.clear(context)
+        repo.scope.launch {
             val miniVideo = if (mini) Sessions.miniFor(videos, all ?: emptyList()) else null
             val ids = if (miniVideo != null) listOf(miniVideo.id) else videos.map { it.id }
             val title = if (miniVideo != null) miniVideo.title else Sessions.title(videos)
             val sec = if (miniVideo != null) miniVideo.playSec ?: 0 else Sessions.totalSec(videos)
             val id = repo.logSession(d.req.slotId, mini, 1f, ids, title, sec)
-            nav.replace(Dest.Completion(id, d.req.copy(mini = mini, videoIds = ids), ids.size))
+            withContext(Dispatchers.Main) {
+                nav.replace(Dest.Completion(id, d.req.copy(mini = mini, videoIds = ids), ids.size))
+            }
         }
     }
 
-    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).padding(top = statusBarTop() + 6.dp, bottom = 24.dp)) {
+    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.navigationBars).padding(top = statusBarTop() + 6.dp, bottom = 24.dp)) {
         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton("arrow_back", { nav.pop() }, size = 44.dp, bg = M.c.bg, contentDescription = "Indietro")
             Text(d.req.label, style = T.title16, color = M.c.ink)

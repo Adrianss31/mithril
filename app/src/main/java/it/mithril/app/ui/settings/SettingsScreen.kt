@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,43 +15,39 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import it.mithril.app.ui.rememberRepo
-import it.mithril.app.ui.statusBarTop
-import it.mithril.app.ui.theme.rise
-import kotlinx.coroutines.launch
-import java.time.LocalDate
 import it.mithril.app.BuildConfig
 import it.mithril.app.cast.Cast
-import it.mithril.app.ui.components.Symbol
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.draw.clip
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Trend
 import it.mithril.app.health.Health
@@ -64,12 +61,18 @@ import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.Overline
 import it.mithril.app.ui.components.PrimaryButton
 import it.mithril.app.ui.components.RoundIconButton
+import it.mithril.app.ui.components.Symbol
 import it.mithril.app.ui.components.TextLink
 import it.mithril.app.ui.components.TonalButton
+import it.mithril.app.ui.rememberRepo
+import it.mithril.app.ui.statusBarTop
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.T
+import it.mithril.app.ui.theme.rise
 import it.mithril.app.update.UpdateState
 import it.mithril.app.update.Updates
+import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -79,6 +82,7 @@ fun SettingsScreen() {
     val toast = LocalToast.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val today by repo.today.collectAsStateWithLifecycle()
     val settings by repo.appSettings.collectAsStateWithLifecycle()
     val weights by repo.weights.collectAsStateWithLifecycle()
     val steps by Health.state.collectAsStateWithLifecycle()
@@ -87,15 +91,23 @@ fun SettingsScreen() {
     val healthLauncher = rememberLauncherForActivityResult(Health.permissionContract()) { scope.launch { Health.refresh(context) } }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notifTick++ }
     LaunchedEffect(Unit) { Health.refresh(context) }
-    val trendNow = remember(weights) {
+    val trendNow = remember(weights, today) {
         val w = weights ?: emptyList()
-        if (w.size >= Trend.MIN_WEIGH_INS) Trend.of(w.map { it.date to it.kg }, LocalDate.now().toEpochDay()).at(LocalDate.now().toEpochDay()) else w.lastOrNull()?.kg
+        if (w.size >= Trend.MIN_WEIGH_INS) Trend.of(w.map { it.date to it.kg }, today.toEpochDay()).at(today.toEpochDay()) else w.lastOrNull()?.kg
     }
-    fun setGoal(kg: Double?) = scope.launch {
-        repo.settings.setGoal(kg?.let { Math.round(it * 10) / 10.0 }, settings.goalStartKg ?: trendNow, LocalDate.now().toEpochDay())
+    fun setGoal(kg: Double?) = repo.scope.launch {
+        val clamped = kg?.coerceIn(20.0, 300.0)?.let { Math.round(it * 10) / 10.0 }
+        repo.setGoal(clamped, settings.goalStartKg ?: trendNow, today.toEpochDay())
     }
 
-    Column(Modifier.fillMaxSize().background(M.c.bg).verticalScroll(rememberScrollState()).padding(top = statusBarTop() + 6.dp, bottom = 32.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(M.c.bg)
+            .verticalScroll(rememberScrollState())
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(top = statusBarTop() + 6.dp, bottom = 32.dp)
+    ) {
         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton("arrow_back", { nav.pop() }, size = 44.dp, bg = M.c.bg, contentDescription = "Indietro")
             Text("Impostazioni", style = T.sheetTitle, color = M.c.ink)
@@ -105,14 +117,18 @@ fun SettingsScreen() {
                 if (settings.goalKg == null) {
                     Text("Nessun obiettivo impostato. Il trend si vede comunque: l'obiettivo aggiunge la proiezione e il ritmo.", style = T.body14, color = M.c.ink2)
                     Spacer(Modifier.height(12.dp))
-                    TonalButton("Imposta un obiettivo", { setGoal(((trendNow ?: 80.0) - 3.0)) }, icon = "add", height = 44.dp)
+                    TonalButton("Imposta un obiettivo", { setGoal(((trendNow ?: 80.0) - 3.0).coerceIn(20.0, 300.0)) }, icon = "add", height = 44.dp)
                 } else {
-                    StepperRow("Obiettivo", "${Fmt.kg(settings.goalKg!!)} kg", { setGoal(settings.goalKg!! - 0.5) }, { setGoal(settings.goalKg!! + 0.5) })
+                    StepperRow(
+                        "Obiettivo", "${Fmt.kg(settings.goalKg!!)} kg",
+                        { setGoal((settings.goalKg!! - 0.5).coerceAtLeast(20.0)) },
+                        { setGoal((settings.goalKg!! + 0.5).coerceAtMost(300.0)) },
+                    )
                     Divider(Modifier.fillMaxWidth())
                     StepperRow(
                         "Ritmo previsto", "${String.format(java.util.Locale.ITALY, "%.2f", settings.weeklyRateKg)} kg/sett.",
-                        { scope.launch { repo.settings.setRate((settings.weeklyRateKg - 0.05).coerceAtLeast(0.05)) } },
-                        { scope.launch { repo.settings.setRate((settings.weeklyRateKg + 0.05).coerceAtMost(1.0)) } },
+                        { repo.scope.launch { repo.setRate((settings.weeklyRateKg - 0.05).coerceAtLeast(0.05)) } },
+                        { repo.scope.launch { repo.setRate((settings.weeklyRateKg + 0.05).coerceAtMost(1.0)) } },
                     )
                     settings.goalStartKg?.let { start ->
                         Spacer(Modifier.height(4.dp))
@@ -120,17 +136,17 @@ fun SettingsScreen() {
                     }
                     Spacer(Modifier.height(8.dp))
                     Row {
-                        TextLink("Riparti da oggi", { scope.launch { repo.settings.setGoal(settings.goalKg, trendNow, LocalDate.now().toEpochDay()); toast.show("Punto di partenza aggiornato") } })
+                        TextLink("Riparti da oggi", { repo.scope.launch { repo.setGoal(settings.goalKg, trendNow, today.toEpochDay()) }; toast.show("Punto di partenza aggiornato") })
                         Spacer(Modifier.weight(1f))
-                        TextLink("Rimuovi obiettivo", { scope.launch { repo.settings.setGoal(null, null, 0) } }, color = M.c.ink2)
+                        TextLink("Rimuovi obiettivo", { repo.scope.launch { repo.setGoal(null, null, 0) } }, color = M.c.ink2)
                     }
                 }
             }
             Section("Passi", 1) {
                 StepperRow(
                     "Obiettivo giornaliero", Fmt.thousands(settings.stepsGoal),
-                    { scope.launch { repo.settings.setStepsGoal((settings.stepsGoal - 500).coerceAtLeast(1000)) } },
-                    { scope.launch { repo.settings.setStepsGoal((settings.stepsGoal + 500).coerceAtMost(30000)) } },
+                    { repo.scope.launch { repo.setStepsGoal((settings.stepsGoal - 500).coerceAtLeast(1000)) } },
+                    { repo.scope.launch { repo.setStepsGoal((settings.stepsGoal + 500).coerceAtMost(30000)) } },
                 )
                 Divider(Modifier.fillMaxWidth())
                 Spacer(Modifier.height(10.dp))
@@ -144,11 +160,66 @@ fun SettingsScreen() {
                     else -> Text("Health Connect non è disponibile su questo telefono.", style = T.body14, color = M.c.ink2)
                 }
             }
-            Section("Promemoria", 2) {
+            Section("Calorie (MyFitnessPal)", 2) {
+                StepperRow(
+                    "Obiettivo giornaliero", "${Fmt.thousands(settings.caloriesGoal)} kcal",
+                    { repo.scope.launch { repo.setCaloriesGoal((settings.caloriesGoal - 50).coerceAtLeast(1200)) } },
+                    { repo.scope.launch { repo.setCaloriesGoal((settings.caloriesGoal + 50).coerceAtMost(4000)) } },
+                )
+                Divider(Modifier.fillMaxWidth())
+                StepperRow(
+                    "Obiettivo proteine", settings.proteinGoalG?.let { "$it g" } ?: "Nessuno",
+                    {
+                        val cur = settings.proteinGoalG
+                        if (cur != null) repo.scope.launch { repo.setProteinGoal(if (cur <= 55) null else cur - 5) }
+                    },
+                    {
+                        val cur = settings.proteinGoalG
+                        repo.scope.launch { repo.setProteinGoal(if (cur == null) 100 else (cur + 5).coerceAtMost(250)) }
+                    },
+                )
+                Divider(Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+                when {
+                    steps.nutritionGranted -> {
+                        Text("Health Connect collegato · lettura calorie e macro attiva.", style = T.body14, color = M.c.ink2)
+                        if (steps.nutritionSources.size > 1 || settings.nutritionSource != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Text("Origine dati", style = T.title15, color = M.c.ink)
+                            Spacer(Modifier.height(8.dp))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Chip("Tutte le app", settings.nutritionSource == null, {
+                                    scope.launch {
+                                        repo.setNutritionSource(null)
+                                        repo.clearNutrition()
+                                        Health.refresh(context)
+                                    }
+                                })
+                                steps.nutritionSources.forEach { src ->
+                                    Chip(src.label, settings.nutritionSource == src.packageName, {
+                                        scope.launch {
+                                            repo.setNutritionSource(src.packageName)
+                                            repo.clearNutrition()
+                                            Health.refresh(context)
+                                        }
+                                    })
+                                }
+                            }
+                        }
+                    }
+                    steps.available -> {
+                        Text("Autorizza i dati nutrizionali per importare automaticamente calorie e macro da MyFitnessPal.", style = T.body14, color = M.c.ink2)
+                        Spacer(Modifier.height(10.dp))
+                        TonalButton("Collega Health Connect", { healthLauncher.launch(Health.requestSet) }, height = 44.dp)
+                    }
+                    else -> Text("Health Connect non è disponibile su questo telefono.", style = T.body14, color = M.c.ink2)
+                }
+            }
+            Section("Promemoria", 3) {
                 Text("Avviso prima della sessione", style = T.title15, color = M.c.ink)
                 Spacer(Modifier.height(10.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(10, 15, 30, 45, 60).forEach { m -> Chip("$m'", settings.reminderLeadMin == m, { scope.launch { repo.settings.setReminderLead(m) } }) }
+                    listOf(10, 15, 30, 45, 60).forEach { m -> Chip("$m'", settings.reminderLeadMin == m, { repo.scope.launch { repo.setReminderLead(m) } }) }
                 }
                 Spacer(Modifier.height(14.dp))
                 Divider(Modifier.fillMaxWidth())
@@ -158,7 +229,7 @@ fun SettingsScreen() {
                         Text("Notifica alle 20:00 per chiudere la settimana", style = T.secondary, color = M.c.ink2)
                     }
                     Switch(
-                        settings.reviewReminder, { on -> scope.launch { repo.settings.setReviewReminder(on) } },
+                        settings.reviewReminder, { on -> repo.scope.launch { repo.setReviewReminder(on) } },
                         colors = SwitchDefaults.colors(checkedTrackColor = M.c.accent, checkedThumbColor = M.c.onAccent, uncheckedTrackColor = M.c.surface2, uncheckedBorderColor = M.c.line2, uncheckedThumbColor = M.c.ink3),
                     )
                 }
@@ -167,8 +238,8 @@ fun SettingsScreen() {
                     TonalButton("Consenti le notifiche", { notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }, height = 44.dp)
                 }
             }
-            Section("Trasmissione alla TV", 3) { CastDefault(settings.castDeviceId, settings.castDeviceName) }
-            Section("Aggiornamenti", 4) {
+            Section("Trasmissione alla TV", 4) { CastDefault(settings.castDeviceId, settings.castDeviceName) }
+            Section("Aggiornamenti", 5) {
                 Text("Mithril ${BuildConfig.VERSION_NAME}", style = T.title15, color = M.c.ink)
                 Spacer(Modifier.height(4.dp))
                 when (val u = update) {
@@ -192,15 +263,15 @@ fun SettingsScreen() {
                 }
                 Spacer(Modifier.height(14.dp))
                 when (val u = update) {
-                    is UpdateState.Available -> PrimaryButton("Scarica e installa", { scope.launch { Updates.download(context, u.info) } }, Modifier.fillMaxWidth(), icon = "download", iconFilled = false, height = 48.dp)
+                    is UpdateState.Available -> PrimaryButton("Scarica aggiornamento", { repo.scope.launch { Updates.download(context.applicationContext, u.info) } }, Modifier.fillMaxWidth(), icon = "download", iconFilled = false, height = 48.dp)
                     is UpdateState.Ready -> PrimaryButton("Installa", { runCatching { context.startActivity(Updates.installIntent(context, u.file)) } }, Modifier.fillMaxWidth(), icon = "system_update", iconFilled = false, height = 48.dp)
-                    is UpdateState.Failed -> if (u.info != null) TonalButton("Riprova il download", { scope.launch { Updates.download(context, u.info) } }, height = 44.dp)
-                        else TonalButton("Cerca aggiornamenti", { scope.launch { Updates.check(context) } }, icon = "sync", height = 44.dp)
+                    is UpdateState.Failed -> if (u.info != null) TonalButton("Riprova il download", { repo.scope.launch { Updates.download(context.applicationContext, u.info) } }, height = 44.dp)
+                    else TonalButton("Cerca aggiornamenti", { repo.scope.launch { Updates.check(context.applicationContext) } }, icon = "sync", height = 44.dp)
                     is UpdateState.Downloading, UpdateState.Checking -> {}
-                    else -> TonalButton("Cerca aggiornamenti", { scope.launch { Updates.check(context) } }, icon = "sync", height = 44.dp)
+                    else -> TonalButton("Cerca aggiornamenti", { repo.scope.launch { Updates.check(context.applicationContext) } }, icon = "sync", height = 44.dp)
                 }
             }
-            Section("Privacy", 5) {
+            Section("Privacy", 6) {
                 Text("Tutto resta sul telefono: niente account, niente server. Internet serve solo per i video di YouTube e per controllare gli aggiornamenti.", style = T.body14, color = M.c.ink2)
             }
         }
@@ -220,7 +291,6 @@ private fun Section(title: String, index: Int, content: @Composable ColumnScope.
 private fun ColumnScope.CastDefault(savedId: String?, savedName: String?) {
     val repo = rememberRepo()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val ui by Cast.state.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { Cast.init(context) }
@@ -243,7 +313,7 @@ private fun ColumnScope.CastDefault(savedId: String?, savedName: String?) {
         Row(Modifier.padding(top = 6.dp)) {
             TextLink(if (savedName == null) "Scegli la TV" else "Cambia TV", { picking = true })
             Spacer(Modifier.weight(1f))
-            if (savedName != null) TextLink("Nessuna", { scope.launch { repo.settings.setCastDevice(null, null) } }, color = M.c.ink2)
+            if (savedName != null) TextLink("Nessuna", { repo.scope.launch { repo.setCastDevice(null, null) } }, color = M.c.ink2)
         }
         return
     }
@@ -252,7 +322,7 @@ private fun ColumnScope.CastDefault(savedId: String?, savedName: String?) {
     if (others.isEmpty()) Text("Cerco TV sulla rete Wi-Fi…", style = T.secondary, color = M.c.ink3, modifier = Modifier.padding(vertical = 14.dp))
     others.forEach { d ->
         DeviceRow(d.name, d.description, selected = false) {
-            scope.launch { repo.settings.setCastDevice(d.id, d.name) }
+            repo.scope.launch { repo.setCastDevice(d.id, d.name) }
             picking = false
         }
     }

@@ -87,6 +87,17 @@ data class WeekPlanEntity(@PrimaryKey val weekStart: Long, val goalSessions: Int
 @Entity(tableName = "review_answer")
 data class ReviewAnswerEntity(@PrimaryKey val weekStart: Long, val obstacle: String?, val skippedDay: Long?, val answeredAt: Long = System.currentTimeMillis())
 
+@Entity(tableName = "nutrition_day")
+data class NutritionDayEntity(
+    @PrimaryKey val date: Long,
+    val kcal: Int,
+    val proteinG: Float? = null,
+    val carbsG: Float? = null,
+    val fatG: Float? = null,
+    val fiberG: Float? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
 @Dao
 abstract class MithrilDao {
     @Query("SELECT * FROM video ORDER BY createdAt DESC") abstract fun videos(): Flow<List<VideoEntity>>
@@ -97,7 +108,7 @@ abstract class MithrilDao {
     @Update abstract suspend fun updateVideo(v: VideoEntity)
     @Query("DELETE FROM video WHERE id = :id") abstract suspend fun deleteVideo(id: Long)
     @Query("UPDATE video SET miniVideoId = NULL WHERE miniVideoId = :id") abstract suspend fun clearMiniRefs(id: Long)
-    @Query("UPDATE video SET timesDone = timesDone + :delta WHERE id IN (:ids)") abstract suspend fun bumpTimesDone(ids: List<Long>, delta: Int)
+    @Query("UPDATE video SET timesDone = MAX(0, timesDone + :delta) WHERE id IN (:ids)") abstract suspend fun bumpTimesDone(ids: List<Long>, delta: Int)
     @Query("UPDATE video SET embeddable = :ok WHERE id = :id") abstract suspend fun setEmbeddable(id: Long, ok: Boolean)
     @Query("UPDATE video SET durationSec = :sec WHERE id = :id AND (durationSec IS NULL OR durationSec = 0)") abstract suspend fun fillDuration(id: Long, sec: Int)
     @Query("UPDATE video SET startSec = :start, endSec = :end WHERE id = :id") abstract suspend fun setTrim(id: Long, start: Int, end: Int?)
@@ -129,16 +140,108 @@ abstract class MithrilDao {
     @Query("SELECT * FROM review_answer") abstract fun reviewAnswers(): Flow<List<ReviewAnswerEntity>>
     @Upsert abstract suspend fun upsertReview(r: ReviewAnswerEntity)
 
+    @Query("SELECT * FROM nutrition_day ORDER BY date") abstract fun nutritionDays(): Flow<List<NutritionDayEntity>>
+    @Query("SELECT * FROM nutrition_day ORDER BY date") abstract suspend fun nutritionDaysNow(): List<NutritionDayEntity>
+    @Upsert abstract suspend fun upsertNutritionDays(days: List<NutritionDayEntity>)
+    @Query("DELETE FROM nutrition_day WHERE date >= :from AND date <= :to") abstract suspend fun deleteNutritionBetween(from: Long, to: Long)
+    @Query("DELETE FROM nutrition_day") abstract suspend fun clearNutrition()
+
+    @Transaction
+    open suspend fun replaceNutritionRange(from: Long, to: Long, rows: List<NutritionDayEntity>) {
+        deleteNutritionBetween(from, to)
+        if (rows.isNotEmpty()) upsertNutritionDays(rows)
+    }
+
+    @Transaction
+    open suspend fun upsertVideoAtomic(meta: VideoMeta, tags: String, miniId: Long?, startSec: Int, endSec: Int?): Long {
+        val existing = videoByYoutubeId(meta.youtubeId)
+        return if (existing != null) {
+            val keepTrim = startSec == 0 && endSec == null
+            updateVideo(
+                existing.copy(
+                    title = meta.title,
+                    localUri = meta.localUri ?: existing.localUri,
+                    channel = meta.channel,
+                    durationSec = meta.durationSec ?: existing.durationSec,
+                    tags = tags,
+                    miniVideoId = miniId,
+                    embeddable = meta.embeddable ?: existing.embeddable,
+                    startSec = if (keepTrim) existing.startSec else startSec,
+                    endSec = if (keepTrim) existing.endSec else endSec,
+                )
+            )
+            existing.id
+        } else {
+            insertVideo(
+                VideoEntity(
+                    youtubeId = meta.youtubeId,
+                    title = meta.title,
+                    channel = meta.channel,
+                    durationSec = meta.durationSec,
+                    thumbnailUrl = meta.thumbnailUrl,
+                    tags = tags,
+                    miniVideoId = miniId,
+                    embeddable = meta.embeddable,
+                    localUri = meta.localUri,
+                    startSec = startSec,
+                    endSec = endSec,
+                )
+            )
+        }
+    }
+
+    @Transaction
+    open suspend fun deleteVideoAtomic(id: Long, fromEpochDay: Long) {
+        clearMiniRefs(id)
+        // Toglie il video dagli slot futuri; gli slot rimasti vuoti spariscono.
+        slotsFrom(fromEpochDay).forEach { s ->
+            if (id in s.videoIdList) {
+                val rest = s.videoIdList - id
+                if (rest.isEmpty()) deleteSlot(s.id) else upsertSlot(s.copy(videoIds = rest.joinToString(",")))
+            }
+        }
+        deleteVideo(id)
+    }
+
+    @Transaction
+    open suspend fun logSessionAtomic(log: SessionLogEntity, videoIds: List<Long>): Long {
+        val id = insertLog(log)
+        if (videoIds.isNotEmpty()) bumpTimesDone(videoIds, 1)
+        return id
+    }
+
+    @Transaction
+    open suspend fun undoLogAtomic(id: Long) {
+        val l = log(id) ?: return
+        val ids = l.videoIds.split(',').mapNotNull { it.trim().toLongOrNull() }
+        if (ids.isNotEmpty()) bumpTimesDone(ids, -1)
+        deleteLog(id)
+    }
+
     @Transaction
     open suspend fun replaceWeekSlots(from: Long, to: Long, slots: List<SlotEntity>) {
-        deleteSlotsBetween(from, to)
-        slots.forEach { upsertSlot(it) }
+        val existingByDate = slotsBetween(from, to).groupBy { it.date }
+        val newDates = slots.map { it.date }.toSet()
+        existingByDate.forEach { (d, old) ->
+            if (d !in newDates) old.forEach { deleteSlot(it.id) }
+            else if (old.size > 1) old.drop(1).forEach { deleteSlot(it.id) }
+        }
+        slots.forEach { s ->
+            val keepId = if (s.id != 0L) s.id else existingByDate[s.date]?.firstOrNull()?.id ?: 0L
+            upsertSlot(if (keepId != s.id) s.copy(id = keepId) else s)
+        }
+    }
+
+    @Transaction
+    open suspend fun replaceWeekWithGoal(from: Long, to: Long, slots: List<SlotEntity>, weekStart: Long, goal: Int) {
+        replaceWeekSlots(from, to, slots)
+        upsertWeekPlan(WeekPlanEntity(weekStart, goal))
     }
 }
 
 @Database(
-    entities = [VideoEntity::class, SlotEntity::class, SessionLogEntity::class, WeightEntity::class, WeekPlanEntity::class, ReviewAnswerEntity::class],
-    version = 3,
+    entities = [VideoEntity::class, SlotEntity::class, SessionLogEntity::class, WeightEntity::class, WeekPlanEntity::class, ReviewAnswerEntity::class, NutritionDayEntity::class],
+    version = 4,
     exportSchema = true,
 )
 abstract class MithrilDb : RoomDatabase() {
@@ -155,8 +258,17 @@ abstract class MithrilDb : RoomDatabase() {
                 db.execSQL("ALTER TABLE video ADD COLUMN endSec INTEGER")
             }
         }
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `nutrition_day` (`date` INTEGER NOT NULL, `kcal` INTEGER NOT NULL, `proteinG` REAL, `carbsG` REAL, `fatG` REAL, `fiberG` REAL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`date`))"
+                )
+            }
+        }
         fun get(context: Context): MithrilDb = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, MithrilDb::class.java, "mithril.db")
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .build().also { instance = it }
         }
     }
 }

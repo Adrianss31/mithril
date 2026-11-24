@@ -1,5 +1,8 @@
 package it.mithril.app.ui.session
 
+import android.content.res.Configuration
+import android.view.TextureView
+import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -30,29 +34,37 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import it.mithril.app.ui.rememberRepo
-import kotlinx.coroutines.launch
+import it.mithril.app.cast.Cast
+import it.mithril.app.cast.CastEngine
+import it.mithril.app.data.LocalVideos
+import it.mithril.app.data.Progress
+import it.mithril.app.data.SessionProgress
 import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.domain.Fmt
@@ -60,38 +72,29 @@ import it.mithril.app.domain.Sessions
 import it.mithril.app.ui.Dest
 import it.mithril.app.ui.LocalNav
 import it.mithril.app.ui.SessionRequest
+import it.mithril.app.ui.SheetKind
 import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.OutlineButton
 import it.mithril.app.ui.components.RoundIconButton
+import it.mithril.app.ui.components.Symbol
 import it.mithril.app.ui.components.Thumb
+import it.mithril.app.ui.rememberRepo
 import it.mithril.app.ui.theme.M
 import it.mithril.app.ui.theme.PlayerInk
 import it.mithril.app.ui.theme.T
-import android.view.TextureView
-import android.webkit.WebView
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.viewinterop.AndroidView
-import it.mithril.app.cast.Cast
-import it.mithril.app.cast.CastEngine
-import it.mithril.app.data.LocalVideos
-import it.mithril.app.data.Progress
-import it.mithril.app.data.SessionProgress
 import it.mithril.app.widget.Widgets
-import it.mithril.app.ui.SheetKind
-import it.mithril.app.ui.components.Symbol
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import androidx.compose.runtime.snapshotFlow
 
 @Composable
 fun PlayerScreen(req: SessionRequest) {
     val repo = rememberRepo()
     val nav = LocalNav.current
     val toast = LocalToast.current
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val all by repo.videos.collectAsStateWithLifecycle()
     // La sequenza è fissata all'apertura: cambi in Libreria non la stravolgono a metà.
@@ -148,11 +151,17 @@ fun PlayerScreen(req: SessionRequest) {
         finishing = true
         engine.pause()
         SessionProgress.clear(context)
-        scope.launch {
-            val done = (0..index).count { k -> k < index || engine.state == 0 || engine.position - clipStart(k) > (clipLen(k) * 0.8f) }
+        val snapIndex = index
+        val snapPos = engine.position
+        val snapState = engine.state
+        val snapRatio = ratio
+        repo.scope.launch {
+            val done = (0..snapIndex).count { k -> k < snapIndex || snapState == 0 || snapPos - clipStart(k) > (clipLen(k) * 0.8f) }
             val ids = videos.map { it.id }
-            val id = repo.logSession(req.slotId, mini, ratio, ids, Sessions.title(videos), total)
-            nav.replace(Dest.Completion(id, req.copy(mini = mini), done.coerceAtLeast(1)))
+            val id = repo.logSession(req.slotId, mini, snapRatio, ids, Sessions.title(videos), total)
+            withContext(Dispatchers.Main) {
+                nav.replace(Dest.Completion(id, req.copy(mini = mini), done.coerceAtLeast(1)))
+            }
         }
     }
     fun leave(d: Dest) { leaving = true; engine.pause(); nav.replace(d) }
@@ -170,8 +179,6 @@ fun PlayerScreen(req: SessionRequest) {
                 val uri = v.localUri!!
                 if (!LocalVideos.readable(context, uri)) { toast.show("File non trovato sul telefono, passo al successivo"); goNext(); return@LaunchedEffect }
                 if (casting) {
-                    // Collegata a video iniziato la TV riparte dall'inizio, dopo l'intro (il collegamento richiede qualche secondo);
-                    // collegata dal widget prima di partire, riprende la sessione da dove era rimasta.
                     local.pause()
                     Cast.play(context, uri, LocalVideos.mimeType(context, uri), v.title, from)?.let { toast.show(it); Cast.disconnect() }
                 } else if (local.loadedUri == uri) {
@@ -182,7 +189,7 @@ fun PlayerScreen(req: SessionRequest) {
             v.embeddable == false -> leave(Dest.External(req, v.id))
             else -> {
                 local.pause()
-                if (wasCasting) Cast.engine.stop()
+                if (wasCasting) Cast.stopMedia()
                 if (web == null) web = createYouTubeWebView(context, v.youtubeId, yt, from) else yt.load(v.youtubeId, from)
             }
         }
@@ -190,7 +197,7 @@ fun PlayerScreen(req: SessionRequest) {
         startAt = 0f
         lastPos = engine.position
     }
-    // Avanzamento salvato per riprendere (e per il widget "Primo video").
+
     fun saveProgress() {
         val slot = req.slotId ?: return
         if (req.mini || finishing) return
@@ -202,6 +209,7 @@ fun PlayerScreen(req: SessionRequest) {
     LaunchedEffect(Unit) { while (true) { delay(10_000); if (latestPlaying.value) latestSave.value() } }
     // Le posizioni di ExoPlayer e della TV vanno lette di continuo.
     LaunchedEffect(engine) {
+        if (engine !is LocalEngine && engine !is CastEngine) return@LaunchedEffect
         while (true) {
             delay(300)
             when (engine) { is LocalEngine -> engine.tick(); is CastEngine -> engine.tick(); else -> {} }
@@ -222,8 +230,6 @@ fun PlayerScreen(req: SessionRequest) {
         val delta = engine.position - lastPos
         if (engine.playing && delta > 0f && delta < 2.5f) watched += delta
         lastPos = engine.position
-        // Fine impostata (outro): si passa oltre. Solo dopo aver visto una posizione prima della fine,
-        // così la posizione rimasta dal video precedente non fa saltare quello nuovo.
         val end = clips[index].second
         if (end == null || engine.position < end - 1f) armedFor = index
         else if (armedFor == index && engine.playing) { armedFor = -1; goNext() }
@@ -239,14 +245,27 @@ fun PlayerScreen(req: SessionRequest) {
     LaunchedEffect(local.error) {
         if (local.error != null) { toast.show("Non riesco a riprodurre questo file, passo al successivo"); goNext() }
     }
+    LaunchedEffect(Cast.engine.error) {
+        val err = Cast.engine.error ?: return@LaunchedEffect
+        toast.show(err)
+        Cast.disconnect()
+    }
     // Schermo acceso; pausa quando l'app va in background (la TV invece continua).
     val view = LocalView.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentEngine by rememberUpdatedState(engine)
+    val currentWeb by rememberUpdatedState(web)
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         val obs = LifecycleEventObserver { _, ev ->
-            if (ev == Lifecycle.Event.ON_PAUSE && currentEngine !is CastEngine) currentEngine.pause()
+            when (ev) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (currentEngine !is CastEngine) currentEngine.pause()
+                    currentWeb?.onPause()
+                }
+                Lifecycle.Event.ON_RESUME -> currentWeb?.onResume()
+                else -> {}
+            }
         }
         lifecycle.addObserver(obs)
         onDispose {
@@ -262,10 +281,15 @@ fun PlayerScreen(req: SessionRequest) {
     val close: () -> Unit = { if (ratio >= Sessions.DONE_RATIO) complete() else { leaving = true; engine.pause(); nav.pop() } }
     BackHandler(onBack = close)
 
-    Column(Modifier.fillMaxSize().background(M.c.player).windowInsetsPadding(WindowInsets.statusBars)) {
+    val clipPos = (engine.position - clipStart(index)).coerceAtLeast(0f)
+    val clipDur = clipLen(index).toFloat().takeIf { it > 0f } ?: (engine.duration - clipStart(index)).coerceAtLeast(0f)
+    val clipProg = if (clipDur > 0f) (clipPos / clipDur).coerceIn(0f, 1f) else 0f
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val topBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             RoundIconButton("keyboard_arrow_down", close, size = 44.dp, iconSize = 28.dp, bg = Color.Transparent, fg = PlayerInk, contentDescription = "Chiudi")
-            Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            Text(req.label, style = T.secondary, color = PlayerInk.copy(alpha = 0.7f), modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (castUi.available && current.isLocal) {
                 RoundIconButton(
                     if (casting) "cast_connected" else "cast", { if (!casting) local.pause(); nav.sheet = SheetKind.CastPicker },
@@ -273,7 +297,10 @@ fun PlayerScreen(req: SessionRequest) {
                 )
             } else Spacer(Modifier.width(44.dp))
         }
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black), contentAlignment = Alignment.Center) {
+    }
+
+    val videoSurface: @Composable (Modifier) -> Unit = { mod ->
+        Box(mod.background(Color.Black), contentAlignment = Alignment.Center) {
             if (current.isLocal) {
                 if (casting || (autoCasting && autoCastName != null)) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Symbol("tv", 44.dp, PlayerInk.copy(alpha = 0.8f))
@@ -290,11 +317,11 @@ fun PlayerScreen(req: SessionRequest) {
             }
             web?.let { NativeHost(it, visible = !finishing && !leaving && !current.isLocal, modifier = Modifier.fillMaxSize()) }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+    }
+
+    val controlsPane: @Composable (Modifier) -> Unit = { mod ->
+        Column(mod.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Spacer(Modifier.height(14.dp))
-            val clipPos = (engine.position - clipStart(index)).coerceAtLeast(0f)
-            val clipDur = clipLen(index).toFloat().takeIf { it > 0f } ?: (engine.duration - clipStart(index)).coerceAtLeast(0f)
-            val clipProg = if (clipDur > 0f) (clipPos / clipDur).coerceIn(0f, 1f) else 0f
             Segments(videos.indices.map { clipLen(it) }, index, clipProg)
             Spacer(Modifier.height(18.dp))
             Text("Video ${index + 1} di ${videos.size} · ${Tags.kind(current.tagList)}", style = T.secondary, color = PlayerInk.copy(alpha = 0.6f))
@@ -334,14 +361,34 @@ fun PlayerScreen(req: SessionRequest) {
             }
             Spacer(Modifier.height(18.dp))
         }
-        OutlineButton(
-            "Segna come fatta", { complete() },
-            Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp, vertical = 12.dp),
-            color = PlayerInk, borderColor = PlayerInk.copy(alpha = 0.25f), height = 54.dp, enabled = !finishing,
-        )
+    }
+
+    if (landscape) {
+        Row(Modifier.fillMaxSize().background(M.c.player).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            videoSurface(Modifier.weight(1.25f).fillMaxHeight())
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                topBar()
+                controlsPane(Modifier.weight(1f))
+                OutlineButton(
+                    "Segna come fatta", { complete() },
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                    color = PlayerInk, borderColor = PlayerInk.copy(alpha = 0.25f), height = 48.dp, enabled = !finishing,
+                )
+            }
+        }
+    } else {
+        Column(Modifier.fillMaxSize().background(M.c.player).windowInsetsPadding(WindowInsets.statusBars)) {
+            topBar()
+            videoSurface(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            controlsPane(Modifier.weight(1f))
+            OutlineButton(
+                "Segna come fatta", { complete() },
+                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 20.dp, vertical = 12.dp),
+                color = PlayerInk, borderColor = PlayerInk.copy(alpha = 0.25f), height = 54.dp, enabled = !finishing,
+            )
+        }
     }
 }
-
 
 /** Un segmento per video, larghezza proporzionale ai minuti. */
 @Composable

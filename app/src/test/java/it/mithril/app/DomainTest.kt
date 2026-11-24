@@ -1,13 +1,19 @@
 package it.mithril.app
 
+import it.mithril.app.data.ReviewAnswerEntity
 import it.mithril.app.data.SessionLogEntity
 import it.mithril.app.data.SlotEntity
 import it.mithril.app.data.Tags
 import it.mithril.app.data.VideoEntity
 import it.mithril.app.data.YouTube
+import it.mithril.app.domain.Correlations
+import it.mithril.app.domain.DayNutrition
 import it.mithril.app.domain.DayState
 import it.mithril.app.domain.Fmt
 import it.mithril.app.domain.Goal
+import it.mithril.app.domain.Milestones
+import it.mithril.app.domain.Nutrition
+import it.mithril.app.domain.ObstacleInsights
 import it.mithril.app.domain.Sessions
 import it.mithril.app.domain.Stats
 import it.mithril.app.domain.StatsPeriod
@@ -24,6 +30,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.DayOfWeek
 import java.time.LocalDate
 
 class DomainTest {
@@ -281,5 +288,83 @@ class DomainTest {
         val futureVal = scrubValueAt(futureDay, trend, today, now, proj)!!
         assertTrue(futureVal.second)
         assertEquals(now + proj.slopePerDay * 15, futureVal.first, 1e-9)
+    }
+
+    @Test fun trimRejectsNegativesAndOverflow() {
+        assertNull(Trim.parse("-1:30"))
+        assertNull(Trim.parse("1:-30"))
+        assertNull(Trim.parse("30:00:00"))
+    }
+
+    @Test fun milestonesSplitGoalInto1KgStepsAndBackpacks() {
+        val today = friday.toEpochDay()
+        val trend = Trend.of((0..30).map { (today - 30 + it) to 86.2 - it * 0.042 }, today)
+        val now = trend.at(today)!! // ~85.2 kg
+        val m = Milestones.forTrend(trend, friday, 80.0, 88.0)!!
+        assertEquals(kotlin.math.floor(now), m.nextKg, 1e-9)
+        assertTrue(m.remainingKg in 0.0..1.0)
+        assertTrue(m.progress in 0f..1f)
+        assertNotNull(m.etaDays)
+        assertNotNull(m.backpackLabel)
+        assertNull(Milestones.backpackEquivalent(0.3))
+        assertEquals("uno zaino col portatile", Milestones.backpackEquivalent(3.0))
+
+        // Rileva superamento dell'intero precedente (85.05 -> 84.95)
+        val crossWeights = (0..10).map { (today - 10 + it) to (86.0 - it * 0.12) }
+        val crossTrend = Trend.of(crossWeights, today)
+        assertNotNull(Milestones.forTrend(crossTrend, friday, 80.0, 88.0))
+    }
+
+    @Test fun nutritionSummarizesCompletedDaysAndMaintenance() {
+        val today = friday.toEpochDay()
+        // Include oggi (da escludere dalla media), un giorno vuoto, e 20 giorni tracciati.
+        val days = (1..20).map { i -> DayNutrition(today - i, 1900, 130f, 190f, 60f) } +
+            listOf(DayNutrition(today, 450))
+        val sum = Nutrition.summarize(days, friday.minusDays(29), friday, 2000)
+        assertEquals(20, sum.daysTracked)
+        assertEquals(1900, sum.avgKcal)
+        assertEquals(130, sum.avgProteinG)
+        assertEquals(20, sum.onTargetDays)
+
+        val trend = Trend.of((0..28).map { (today - 28 + it) to 85.0 - it * 0.05 }, today)
+        val maint = Nutrition.estimateMaintenance(days, trend, friday, 28)!!
+        assertTrue(maint.maintenanceKcal > 1900)
+        assertEquals(20, maint.daysUsed)
+    }
+
+    @Test fun correlationsCompareActiveWeeksAndCalories() {
+        val mon = Week.start(friday)
+        val w1 = mon.minusWeeks(2)
+        val w2 = mon.minusWeeks(1)
+        val slots = listOf(slot(w1), slot(w1.plusDays(2)), slot(w1.plusDays(4)), slot(w2))
+        // w1 attiva (3 sessioni), w2 inattiva (1 sessione)
+        val logs = listOf(log(w1), log(w1.plusDays(2)), log(w1.plusDays(4)), log(w2))
+        val weights = (0..30).map { friday.minusDays(30L - it).toEpochDay() to 86.0 - it * 0.05 }
+        val trend = Trend.of(weights, friday.toEpochDay())
+        val nutrition = (0..6).map { DayNutrition(w1.plusDays(it.toLong()).toEpochDay(), 1850) } +
+            (0..6).map { DayNutrition(w2.plusDays(it.toLong()).toEpochDay(), 2450) }
+        val corr = Correlations.analyze(w1, friday, slots, logs, emptyMap(), trend, nutrition, 2000)
+        assertEquals(2, corr.weeks.size)
+        assertEquals(1, corr.activeWeeksCount)
+        assertEquals(1, corr.inactiveWeeksCount)
+        assertEquals(1, corr.onTargetKcalWeeks)
+        assertEquals(1, corr.overTargetKcalWeeks)
+        assertEquals(2000, corr.trainingDayKcalAvg)
+        assertEquals(2210, corr.restDayKcalAvg)
+    }
+
+    @Test fun obstacleInsightsDetectRepeatedSkippedDayOrObstacle() {
+        val mon = Week.start(friday)
+        val thu1 = mon.minusWeeks(1).plusDays(3).toEpochDay()
+        val thu2 = mon.minusWeeks(2).plusDays(3).toEpochDay()
+        val reviews = listOf(
+            ReviewAnswerEntity(mon.minusWeeks(1).toEpochDay(), "Stanchezza", thu1),
+            ReviewAnswerEntity(mon.minusWeeks(2).toEpochDay(), "Stanchezza", thu2),
+        )
+        val tip = ObstacleInsights.forPlanner(reviews, friday)
+        assertNotNull(tip)
+        assertEquals(DayOfWeek.THURSDAY, tip!!.dayOfWeek)
+        assertEquals("Spesso salta per stanchezza", ObstacleInsights.dayHint(reviews, DayOfWeek.THURSDAY, friday))
+        assertNull(ObstacleInsights.dayHint(reviews, DayOfWeek.MONDAY, friday))
     }
 }

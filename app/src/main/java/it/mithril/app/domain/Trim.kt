@@ -7,11 +7,15 @@ object Trim {
 
     /** "1:30", "1.30", "1:02:30" o solo secondi ("90"); null se vuoto o non valido. */
     fun parse(text: String): Int? {
-        val parts = text.trim().split(Regex("[:.,' ]+")).filter { it.isNotEmpty() }
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || trimmed.contains('-')) return null
+        val parts = trimmed.split(Regex("[:.,' ]+")).filter { it.isNotEmpty() }
         if (parts.isEmpty() || parts.size > 3) return null
         val n = parts.map { it.toIntOrNull() ?: return null }
+        if (n.any { it < 0 }) return null
         if (n.size > 1 && n.drop(1).any { it >= 60 }) return null
-        return n.fold(0) { acc, v -> acc * 60 + v }
+        val total = n.fold(0L) { acc, v -> acc * 60L + v }
+        return if (total in 0L..(24L * 3600L)) total.toInt() else null
     }
 
     /** Messaggio da mostrare se inizio e fine non vanno bene, altrimenti null. */

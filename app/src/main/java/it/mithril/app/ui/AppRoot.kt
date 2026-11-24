@@ -44,8 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import it.mithril.app.ui.calories.CaloriesScreen
 import it.mithril.app.ui.theme.ts
 import it.mithril.app.ui.components.LocalToast
 import it.mithril.app.ui.components.Sheet
@@ -142,7 +146,8 @@ private fun BottomNav(nav: Navigator) {
             Column(
                 Modifier
                     .weight(1f)
-                    .clickable(remember { MutableInteractionSource() }, null) { nav.select(t) },
+                    .semantics { selected = active }
+                    .clickable(remember { MutableInteractionSource() }, null, role = Role.Tab) { nav.select(t) },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(Modifier.size(64.dp, 32.dp), contentAlignment = Alignment.Center) {
@@ -164,7 +169,7 @@ private fun Overlays(nav: Navigator) {
     AnimatedContent(
         targetState = top,
         transitionSpec = { overlayTransition(initialState, targetState, motion) },
-        contentKey = { it?.let { d -> d::class.simpleName + (d as? Dest.Player)?.req.hashCode() } },
+        contentKey = { it },
         label = "overlay",
     ) { d ->
         if (d == null) Box(Modifier) else Box(Modifier.fillMaxSize()) {
@@ -177,6 +182,7 @@ private fun Overlays(nav: Navigator) {
                 is Dest.PlanWeek -> PlanWeekScreen(d.weekStart)
                 Dest.Settings -> SettingsScreen()
                 Dest.AllWeights -> AllWeightsScreen()
+                Dest.Calories -> CaloriesScreen()
             }
         }
     }

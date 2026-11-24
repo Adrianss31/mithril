@@ -52,6 +52,7 @@ class ShareActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 var state by remember { mutableStateOf<St?>(St.Loading) }
                 var visible by remember { mutableStateOf(true) }
+                var saving by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
                     state = if (id == null) St.Error("Questo non sembra un link di YouTube. Condividi il video dall'app YouTube.")
                     else runCatching { YouTube.fetch(id) }.fold({ St.Loaded(it) }, { St.Error("Serve la connessione a internet per leggere i dettagli del video.") })
@@ -78,10 +79,15 @@ class ShareActivity : ComponentActivity() {
                             PrimaryButton("Chiudi", { close() }, Modifier.fillMaxWidth())
                         }
                         is St.Loaded -> VideoForm(st.meta, null, onSave = { title, tags, mini, start, end ->
-                            scope.launch {
-                                repo.addVideo(st.meta.copy(title = title), tags, mini, start, end)
-                                Toast.makeText(applicationContext, "Salvato in Libreria", Toast.LENGTH_SHORT).show()
-                                close()
+                            if (!saving) {
+                                saving = true
+                                repo.scope.launch {
+                                    repo.addVideo(st.meta.copy(title = title), tags, mini, start, end)
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(applicationContext, "Salvato in Libreria", Toast.LENGTH_SHORT).show()
+                                        close()
+                                    }
+                                }
                             }
                         })
                     }

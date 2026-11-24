@@ -45,6 +45,11 @@ data class StatsSummary(
     val skipped: Int,
     val recovered: Int,
     val topVideos: List<Pair<Long, Int>>,
+    val caloriesAvg: Int? = null,
+    val caloriesDays: Int = 0,
+    val caloriesGoalDays: Int = 0,
+    val yearSessions: Int = 0,
+    val yearMinutes: Int = 0,
 ) {
     val activeWeeks: Int get() = weeks.count { it.active }
     val trendChange: Double? get() = if (trendStart != null && trendEnd != null) trendEnd - trendStart else null
@@ -56,9 +61,21 @@ object Stats {
     fun minutes(log: SessionLogEntity): Int = (log.durationSec * log.watchedRatio.coerceIn(0f, 1f) / 60f).roundToInt()
 
     /** Primo giorno del periodo: per "Tutto" il primo dato registrato. */
-    fun from(period: StatsPeriod, today: LocalDate, logs: List<SessionLogEntity>, weights: List<Pair<Long, Double>>, slots: List<SlotEntity>): LocalDate {
+    fun from(
+        period: StatsPeriod,
+        today: LocalDate,
+        logs: List<SessionLogEntity>,
+        weights: List<Pair<Long, Double>>,
+        slots: List<SlotEntity>,
+        nutrition: List<DayNutrition> = emptyList(),
+    ): LocalDate {
         period.days?.let { return today.minusDays(it - 1L) }
-        val first = listOfNotNull(logs.minOfOrNull { it.date }, weights.minOfOrNull { it.first }, slots.minOfOrNull { it.date }).minOrNull()
+        val first = listOfNotNull(
+            logs.minOfOrNull { it.date },
+            weights.minOfOrNull { it.first },
+            slots.minOfOrNull { it.date },
+            nutrition.minOfOrNull { it.date },
+        ).minOrNull()
         return first?.let { minOf(LocalDate.ofEpochDay(it), today.minusDays(27)) } ?: today.minusDays(27)
     }
 
@@ -87,14 +104,18 @@ object Stats {
         steps: Map<Long, Int>,
         stepsGoal: Int,
         zone: ZoneId = ZoneId.systemDefault(),
+        nutrition: List<DayNutrition> = emptyList(),
+        caloriesGoal: Int = 2000,
     ): StatsSummary {
         val f = from.toEpochDay(); val t = today.toEpochDay()
         val inRange = logs.filter { it.date in f..t }
         val logDays = inRange.map { it.date }.toSet()
+        val logsByDay = logs.groupBy { it.date }
+        val slotsByDay = slots.groupBy { it.date }
 
         val weeks = generateSequence(Week.start(from)) { it.plusWeeks(1) }.takeWhile { !it.isAfter(today) }.map { w ->
             val ws = w.toEpochDay()
-            val wl = logs.filter { it.date in ws..ws + 6 }
+            val wl = (ws..ws + 6).flatMap { logsByDay[it].orEmpty() }
             WeekBar(w, wl.count { !it.isMini }, wl.count { it.isMini }, wl.sumOf { minutes(it) }, Week.goalFor(w, goals))
         }.toList()
         val (streak, best) = streaks(today, slots, logs, goals)
@@ -117,12 +138,18 @@ object Stats {
 
         // "Mai due volte di fila": dopo un giorno saltato, ti sei allenato il giorno dopo?
         val skippedDays = (f until t).filter { d ->
-            Week.dayState(LocalDate.ofEpochDay(d), today, slots, logs) == DayState.SKIPPED && (d + 1 < t || (d + 1) in logDays)
+            val dayLogs = logsByDay[d].orEmpty()
+            val daySlots = slotsByDay[d].orEmpty()
+            dayLogs.isEmpty() && daySlots.isNotEmpty() && (d + 1 < t || (d + 1) in logDays)
         }
-        val allLogDays = logs.map { it.date }.toSet()
+        val allLogDays = logsByDay.keys
 
         val counts = HashMap<Long, Int>()
         inRange.forEach { l -> l.videoIds.split(',').mapNotNull { it.trim().toLongOrNull() }.forEach { counts[it] = (counts[it] ?: 0) + 1 } }
+
+        val calSummary = Nutrition.summarize(nutrition, from, today, caloriesGoal)
+        val yearStart = today.minusDays(364).toEpochDay()
+        val yearLogs = logs.filter { it.date in yearStart..t }
 
         return StatsSummary(
             from = from, to = today,
@@ -146,6 +173,11 @@ object Stats {
             skipped = skippedDays.size,
             recovered = skippedDays.count { (it + 1) in allLogDays },
             topVideos = counts.entries.sortedWith(compareByDescending<Map.Entry<Long, Int>> { it.value }.thenBy { it.key }).take(5).map { it.key to it.value },
+            caloriesAvg = calSummary.avgKcal,
+            caloriesDays = calSummary.daysTracked,
+            caloriesGoalDays = calSummary.onTargetDays,
+            yearSessions = yearLogs.size,
+            yearMinutes = yearLogs.sumOf { minutes(it) },
         )
     }
 

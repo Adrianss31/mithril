@@ -77,8 +77,8 @@ import it.mithril.app.ui.theme.T
 fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
     val repo = rememberRepo()
     val toast = LocalToast.current
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val today by repo.today.collectAsStateWithLifecycle()
     val videos by repo.videos.collectAsStateWithLifecycle()
     val slots by repo.slots.collectAsStateWithLifecycle()
     val all = videos ?: emptyList()
@@ -88,7 +88,7 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
     var time by remember(s) { mutableIntStateOf(s.edit?.timeMin ?: 18 * 60 + 30) }
     var place by remember(s) { mutableStateOf(s.edit?.place ?: "Soggiorno") }
     var custom by remember(s) { mutableStateOf(false) }
-    val times = remember(slots) { TimeSuggest.suggest(slots, java.time.LocalDate.now()) }
+    val times = remember(slots, today) { TimeSuggest.suggest(slots, today) }
     val knownPlaces = remember(slots) { (Places.DEFAULTS + slots.map { it.place }).distinct().take(6) }
     LaunchedEffect(s) {
         if (s.edit == null) repo.lastSlotLike(s.date)?.let { time = it.timeMin; place = it.place }
@@ -99,7 +99,8 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
         Text(Fmt.dayLong(s.date), style = T.sheetTitle, color = M.c.ink, modifier = Modifier.weight(1f))
         if (s.edit != null && !s.onlyWhenWhere) {
             RoundIconButton("delete", {
-                scope.launch { repo.deleteSlot(s.edit.id); toast.show("Slot eliminato") }
+                repo.scope.launch { repo.deleteSlot(s.edit.id) }
+                toast.show("Slot eliminato")
                 onDone()
             }, size = 36.dp, iconSize = 20.dp, contentDescription = "Elimina slot")
             Spacer(Modifier.width(10.dp))
@@ -194,10 +195,8 @@ fun ColumnScope.NewSlotSheet(s: SheetKind.NewSlot, onDone: () -> Unit) {
                 else if (s.onlyWhenWhere) { s.onPicked?.invoke(time, place.trim().ifBlank { "Soggiorno" }); onDone() }
                 else {
                     val slot = SlotEntity(id = s.edit?.id ?: 0, date = s.date.toEpochDay(), timeMin = time, place = place.trim().ifBlank { "Soggiorno" }, videoIds = picked.joinToString(","))
-                    scope.launch {
-                        repo.saveSlot(slot)
-                        toast.show(if (s.edit != null) "Slot aggiornato" else "Aggiunto: ${Fmt.dayName(s.date.dayOfWeek).lowercase()} alle ${Fmt.time(time)}")
-                    }
+                    repo.scope.launch { repo.saveSlot(slot) }
+                    toast.show(if (s.edit != null) "Slot aggiornato" else "Aggiunto: ${Fmt.dayName(s.date.dayOfWeek).lowercase()} alle ${Fmt.time(time)}")
                     onDone()
                 }
             },

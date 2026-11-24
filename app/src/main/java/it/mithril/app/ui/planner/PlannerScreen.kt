@@ -104,18 +104,18 @@ fun PlannerScreen() {
                 Column(Modifier.weight(1f)) {
                     Text("Planner", style = ts(26, FontWeight.SemiBold, (-0.02).em), color = M.c.onHero)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RoundIconButton("chevron_left", { offset-- }, size = 26.dp, iconSize = 18.dp, bg = M.c.heroSoft.copy(alpha = 0f), fg = M.c.onHero, enabled = offset > -8, contentDescription = "Settimana precedente")
+                        RoundIconButton("chevron_left", { offset-- }, size = 40.dp, iconSize = 20.dp, bg = M.c.heroSoft.copy(alpha = 0f), fg = M.c.onHero, enabled = offset > -8, contentDescription = "Settimana precedente")
                         Text(Fmt.weekRange(start), style = T.secondary, color = M.c.onHero.copy(alpha = 0.9f))
-                        RoundIconButton("chevron_right", { offset++ }, size = 26.dp, iconSize = 18.dp, bg = M.c.heroSoft.copy(alpha = 0f), fg = M.c.onHero, enabled = offset < 4, contentDescription = "Settimana successiva")
+                        RoundIconButton("chevron_right", { offset++ }, size = 40.dp, iconSize = 20.dp, bg = M.c.heroSoft.copy(alpha = 0f), fg = M.c.onHero, enabled = offset < 4, contentDescription = "Settimana successiva")
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Obiettivo", style = T.caption, color = M.c.onHero.copy(alpha = 0.8f))
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RoundIconButton("remove", { scope.launch { repo.setWeekGoal(start, goal - 1) } }, size = 32.dp, iconSize = 18.dp, bg = M.c.heroSoft, fg = M.c.onHero, enabled = goal > 1, contentDescription = "Meno sessioni")
+                        RoundIconButton("remove", { scope.launch { repo.setWeekGoal(start, goal - 1) } }, size = 36.dp, iconSize = 18.dp, bg = M.c.heroSoft, fg = M.c.onHero, enabled = goal > 1, contentDescription = "Meno sessioni")
                         Text(if (goal == 1) "1 sessione" else "$goal sessioni", style = T.title15, color = M.c.onHero, modifier = Modifier.padding(horizontal = 10.dp))
-                        RoundIconButton("add", { scope.launch { repo.setWeekGoal(start, goal + 1) } }, size = 32.dp, iconSize = 18.dp, bg = M.c.heroSoft, fg = M.c.onHero, enabled = goal < 7, contentDescription = "Più sessioni")
+                        RoundIconButton("add", { scope.launch { repo.setWeekGoal(start, goal + 1) } }, size = 36.dp, iconSize = 18.dp, bg = M.c.heroSoft, fg = M.c.onHero, enabled = goal < 7, contentDescription = "Più sessioni")
                     }
                 }
             }
