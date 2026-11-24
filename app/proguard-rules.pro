@@ -1,5 +1,7 @@
 -keep class it.mithril.app.cast.CastOptionsProvider { *; }
 -keep class it.mithril.app.widget.WidgetRefreshWorker { public <init>(...); }
+-keep class * extends androidx.glance.appwidget.GlanceAppWidget { *; }
+-keep class * extends androidx.glance.appwidget.GlanceAppWidgetReceiver { *; }
 
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;

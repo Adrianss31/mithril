@@ -171,6 +171,13 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 if (action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED) {
                     runCatching { Repo.get(app).refreshToday() }
+                }
+                if (
+                    action == Intent.ACTION_TIME_CHANGED ||
+                    action == Intent.ACTION_TIMEZONE_CHANGED ||
+                    action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+                    action == Intent.ACTION_BOOT_COMPLETED
+                ) {
                     runCatching { Widgets.updateAll(app) }
                 }
                 runCatching { Reminders.reschedule(app) }

@@ -1,5 +1,7 @@
 package it.mithril.app.widget
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,13 +14,13 @@ import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
@@ -65,14 +67,27 @@ internal object WC {
 }
 
 object Widgets {
+    private val receivers: List<Pair<Class<out GlanceAppWidgetReceiver>, () -> GlanceAppWidget>> = listOf(
+        WeightWidgetReceiver::class.java to ::WeightWidget,
+        SessionWidgetReceiver::class.java to ::SessionWidget,
+        StepsRingWidgetReceiver::class.java to ::StepsRingWidget,
+        FirstVideoWidgetReceiver::class.java to ::FirstVideoWidget,
+        WeightSmallWidgetReceiver::class.java to ::WeightSmallWidget,
+        GoalWidgetReceiver::class.java to ::GoalWidget,
+        GoalLargeWidgetReceiver::class.java to ::GoalLargeWidget,
+    )
+
     suspend fun updateAll(context: Context) {
-        runCatching { WeightWidget().updateAll(context) }
-        runCatching { SessionWidget().updateAll(context) }
-        runCatching { StepsRingWidget().updateAll(context) }
-        runCatching { FirstVideoWidget().updateAll(context) }
-        runCatching { WeightSmallWidget().updateAll(context) }
-        runCatching { GoalWidget().updateAll(context) }
-        runCatching { GoalLargeWidget().updateAll(context) }
+        val awm = AppWidgetManager.getInstance(context) ?: return
+        val gm = GlanceAppWidgetManager(context)
+        for ((receiverClass, factory) in receivers) {
+            val ids = runCatching { awm.getAppWidgetIds(ComponentName(context, receiverClass)) }.getOrNull() ?: continue
+            if (ids.isEmpty()) continue
+            val widget = factory()
+            for (id in ids) {
+                runCatching { widget.update(context, gm.getGlanceIdBy(id)) }
+            }
+        }
     }
 }
 

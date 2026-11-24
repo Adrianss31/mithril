@@ -1,0 +1,2 @@
+- **Widget sulla home sistemati**: impedita l'offuscazione/fusione R8 delle classi Glance che nella 1.7.0 faceva sovrascrivere tra loro i widget esistenti sulla schermata Home.
+- **Auto-riparazione immediata**: all'aggiornamento i widget già posizionati sulla home vengono rigenerati automaticamente ciascuno col proprio provider, senza doverli rimuovere e rimettere.
