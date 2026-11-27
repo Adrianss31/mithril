@@ -1,0 +1,1 @@
+- **Backup e ripristino via AppHub**: aggiunto il supporto al backup completo di database, preferenze e stato dell'app tramite AppHub, per migrare rapidamente su un nuovo telefono.

@@ -181,5 +181,11 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <provider
+            android:name=".backup.AppHubBackupProvider"
+            android:authorities="${applicationId}.apphub.backup"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
     </application>
 </manifest>

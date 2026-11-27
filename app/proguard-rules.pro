@@ -9,3 +9,4 @@
 
 -keep,includedescriptorclasses class it.mithril.app.update.SignedRelease** { *; }
 -keep,includedescriptorclasses class it.mithril.app.update.ReleaseInfo** { *; }
+-keep class it.mithril.app.backup.AppHubBackupProvider { *; }
