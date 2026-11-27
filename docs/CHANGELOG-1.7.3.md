@@ -1,0 +1,1 @@
+- **Backup completo video locali su AppHub**: oltre a database e preferenze, AppHub ora include automaticamente i video locali di training e li ricollega subito dopo il ripristino sul nuovo telefono.

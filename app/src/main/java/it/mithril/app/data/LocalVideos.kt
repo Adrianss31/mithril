@@ -61,18 +61,41 @@ object LocalVideos {
         context.contentResolver.openFileDescriptor(Uri.parse(uri), "r")?.use { true } ?: false
     }.getOrDefault(false)
 
-    fun mimeType(context: Context, uri: String): String = context.contentResolver.getType(Uri.parse(uri)) ?: "video/mp4"
+    fun mimeType(context: Context, uri: String): String {
+        val parsed = Uri.parse(uri)
+        context.contentResolver.getType(parsed)?.let { return it }
+        return when (uri.substringAfterLast('.', "").lowercase()) {
+            "mkv" -> "video/x-matroska"
+            "webm" -> "video/webm"
+            "mov" -> "video/quicktime"
+            "3gp" -> "video/3gpp"
+            "avi" -> "video/x-msvideo"
+            else -> "video/mp4"
+        }
+    }
 
     fun forget(context: Context, v: VideoEntity) {
         val uri = v.localUri ?: return
         runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        deleteOwnedVideoIfInsideApp(context, uri)
         if (v.thumbnailUrl.startsWith("file:")) runCatching { File(Uri.parse(v.thumbnailUrl).path!!).delete() }
     }
 
     fun forgetMeta(context: Context, meta: VideoMeta) {
         val uri = meta.localUri ?: return
         runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        deleteOwnedVideoIfInsideApp(context, uri)
         if (meta.thumbnailUrl.startsWith("file:")) runCatching { File(Uri.parse(meta.thumbnailUrl).path!!).delete() }
+    }
+
+    private fun deleteOwnedVideoIfInsideApp(context: Context, uri: String) {
+        if (!uri.startsWith("file:")) return
+        runCatching {
+            val path = Uri.parse(uri).path ?: return@runCatching
+            val file = File(path)
+            val ownedRoot = File(context.filesDir, "local_videos").canonicalPath + File.separator
+            if (file.canonicalPath.startsWith(ownedRoot)) file.delete()
+        }
     }
 
     private fun thumbDir(context: Context) = File(context.filesDir, "thumbs").apply { mkdirs() }
